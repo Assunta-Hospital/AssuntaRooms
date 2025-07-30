@@ -31,3 +31,18 @@ To run this project locally using **npm**:
    ```bash
    git clone https://github.com/Assunta-Hospital/AssuntaRooms.git
    cd AssuntaRooms
+
+2. **Install dependencies**
+
+   ```bash
+   npm install
+
+3. **(Optional) Update outdated packages**
+
+   ```bash
+   npm update
+
+4. **Run it locally**
+
+   ```bash
+   npm run dev
