@@ -22,6 +22,45 @@ This project was built using:
 
 ---
 
+# Prerequisites
+
+1. [Node.js](https://nodejs.org/en) (v18 or newer recommended)
+   - Required to run and build the app
+   - Check with:
+
+   ```bash
+
+   node -v
+
+2. [npm](https://www.npmjs.com/) (comes with Node.js)
+   - For managing packages
+   - Check with:
+
+   ```bash
+
+   npm -v
+
+3. [git](https://git-scm.com/downloads)
+   - To clone the repository and manage version control
+   - Check with:
+
+   ```bash
+
+   git --version
+
+4. [Supabase](https://supabase.com/) project + keys
+   - Sign up at supabase.com
+   - Create a new project
+   - Get your SUPABASE_URL and SUPABASE_ANON_KEY from the project settings > API
+   - Add them to .env.local like:
+
+   ```bash
+
+   NEXT_PUBLIC_SUPABASE_URL=<https://your-project.supabase.co>
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+
+---
+
 # Getting Started
 
 To run this project locally using **npm**:
