@@ -26,7 +26,7 @@ This project was built using:
 
 1. [Node.js](https://nodejs.org/en) (v18 or newer recommended)
    - Required to run and build the app
-  Check with:
+   - Check with:
 
    ```bash
 
@@ -34,7 +34,7 @@ This project was built using:
 
 2. [npm](https://www.npmjs.com/) (comes with Node.js)
    - For managing packages
-   Check with:
+   - Check with:
 
    ```bash
 
@@ -42,17 +42,17 @@ This project was built using:
 
 3. [git](https://git-scm.com/downloads)
    - To clone the repository and manage version control
-   Check with:
+   - Check with:
 
    ```bash
 
    git --version
 
 4. [Supabase](https://supabase.com/) project + keys
-   – Sign up at supabase.com
-   – Create a new project
-   – Get your SUPABASE_URL and SUPABASE_ANON_KEY from the project settings > API
-   – Add them to .env.local like:
+   - Sign up at supabase.com
+   - Create a new project
+   - Get your SUPABASE_URL and SUPABASE_ANON_KEY from the project settings > API
+   - Add them to .env.local like:
 
    ```bash
 
