@@ -3,16 +3,16 @@
 
 import React, { createContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { mockUsers } from '@/lib/mock-data';
-import type { User, Department } from '@/lib/types';
+import type { User } from '@/lib/types';
 import { useToast } from "@/hooks/use-toast";
-import { format } from 'date-fns';
+import { supabase } from '@/lib/supabase';
+import bcrypt from 'bcryptjs';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   login: (email: string, pass: string) => Promise<void>;
-  signup: (email: string, pass: string, name: string, department: string, avatarUrl: string) => Promise<void>;
+  signup: (email: string, pass: string, username: string, dept_id: string, avatarUrl: string) => Promise<void>;
   logout: () => void;
   updateUser: (updatedUser: User) => Promise<void>;
 }
@@ -20,14 +20,11 @@ interface AuthContextType {
 export const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
-  login: async () => {},
-  signup: async () => {},
-  logout: () => {},
-  updateUser: async () => {},
+  login: async () => { },
+  signup: async () => { },
+  logout: () => { },
+  updateUser: async () => { },
 });
-
-// Use a simple in-memory store for users that persists across HMR
-let userStore = [...mockUsers];
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -36,76 +33,104 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check for user in localStorage on initial load
-    try {
-        const storedUser = localStorage.getItem('assunta-user');
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
-        }
-    } catch (error) {
-        console.error("Failed to parse user from localStorage", error);
+    const storedUser = localStorage.getItem('assunta-user');
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (e) {
+        console.error("Invalid user data in localStorage");
         localStorage.removeItem('assunta-user');
+      }
     }
     setIsLoading(false);
   }, []);
 
   const login = useCallback(async (email: string, pass: string) => {
-    // Find user in the mock data
-    const foundUser = userStore.find(u => u.email === email && u.password === pass);
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
 
-    if (foundUser) {
-        setUser(foundUser);
-        localStorage.setItem('assunta-user', JSON.stringify(foundUser));
-      
-        if (foundUser.status !== 'approved') {
-            router.push('/status');
-        } else {
-            router.push('/dashboard');
-        }
-    } else {
-        toast({
-            variant: "destructive",
-            title: "Login Failed",
-            description: "Invalid email or password. Please try again.",
-        });
+    if (error || !data) {
+      toast({
+        variant: "destructive",
+        title: "Login Failed",
+        description: "Invalid email or password."
+      });
+      return;
     }
+
+    const isPasswordCorrect = await bcrypt.compare(pass, data.password);
+    if (!isPasswordCorrect) {
+      toast({
+        variant: "destructive",
+        title: "Login Failed",
+        description: "Invalid email or password."
+      });
+      return;
+    }
+
+    setUser(data);
+    localStorage.setItem('assunta-user', JSON.stringify(data));
+    router.push(data.status !== 'approved' ? '/status' : '/dashboard');
   }, [router, toast]);
 
-  const signup = useCallback(async (email: string, pass: string, name: string, department: string, avatarUrl: string) => {
-    // Check if user already exists
-    if (userStore.some(u => u.email === email)) {
-        toast({
-            variant: 'destructive',
-            title: 'Sign-up Error',
-            description: 'An account with this email already exists.',
-        });
-        return;
+  const signup = useCallback(async (
+    email: string,
+    pass: string,
+    username: string,
+    dept_id: string,
+    avatarUrl: string
+  ) => {
+    const { data: existing, error: checkError } = await supabase
+      .from('users')
+      .select('user_id')
+      .eq('email', email)
+      .single();
+
+    if (existing) {
+      toast({
+        variant: 'destructive',
+        title: 'Sign-up Error',
+        description: 'An account with this email already exists.',
+      });
+      return;
     }
 
-    // Create a new user (in-memory)
-    const newUser: User = {
-        id: `user-${new Date().getTime()}`,
-        name,
+    const hashedPassword = await bcrypt.hash(pass, 10);
+
+    const { data, error } = await supabase
+      .from('users')
+      .insert({
         email,
-        password: pass,
-        role: 'User',
-        status: 'pending', // New signups are pending
-        avatar: avatarUrl || `https://i.pravatar.cc/150?u=${email}`,
-        department: department as Department,
-        createdAt: format(new Date(), 'yyyy-MM-dd'),
-    };
-    
-    userStore.push(newUser);
-    setUser(newUser);
-    localStorage.setItem('assunta-user', JSON.stringify(newUser));
+        password: hashedPassword,
+        username,
+        role: 'user',
+        status: 'pending',
+        dept_id,
+        pfp_url: avatarUrl || `https://i.pravatar.cc/150?u=${email}`,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
 
+    if (error || !data) {
+      toast({
+        variant: 'destructive',
+        title: 'Sign-up Failed',
+        description: 'Unable to create account. Please try again.',
+      });
+      return;
+    }
+
+    setUser(data);
+    localStorage.setItem('assunta-user', JSON.stringify(data));
     toast({
-        title: 'Account Created!',
-        description: "Your account is now pending approval from an administrator.",
+      title: 'Account Created!',
+      description: "Your account is now pending approval from an administrator.",
     });
-
     router.push('/status');
-
   }, [router, toast]);
 
   const logout = useCallback(() => {
@@ -113,19 +138,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem('assunta-user');
     router.push('/login');
   }, [router]);
-  
+
   const updateUser = useCallback(async (updatedUser: User) => {
-      // Update in-memory store
-      userStore = userStore.map(u => u.id === updatedUser.id ? updatedUser : u);
-      
-      // Update state and localStorage
+    const { error } = await supabase
+      .from('users')
+      .update(updatedUser)
+      .eq('user_id', updatedUser.user_id);
+
+    if (!error) {
       setUser(updatedUser);
       localStorage.setItem('assunta-user', JSON.stringify(updatedUser));
-
       toast({
-          title: "Profile Updated",
-          description: "Your profile has been changed successfully."
+        title: "Profile Updated",
+        description: "Your profile has been changed successfully."
       });
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: 'Could not update your profile.'
+      });
+    }
   }, [toast]);
 
   return (
