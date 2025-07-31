@@ -51,7 +51,7 @@ This project was built using:
 4. [Supabase](https://supabase.com/) project + keys
    - Sign up at supabase.com
    - Create a new project
-   - Paste the contents of db.sql into supabase SQL editor and run it
+   - Paste the contents of sql into supabase SQL editor and run it
    - Get your SUPABASE_URL and SUPABASE_ANON_KEY from the project settings > API
    - Add them to .env.local like:
 
