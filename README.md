@@ -52,7 +52,7 @@ This project was built using:
    - Sign up at supabase.com
    - Create a new project
    - Paste the contents of sql into supabase SQL editor and run it
-   - Get your SUPABASE_URL and SUPABASE_ANON_KEY from the project settings > API [step 3](https://supabase.com/docs/guides/getting-started/quickstarts/nextjs)
+   - Get your SUPABASE_URL and SUPABASE_ANON_KEY from the project settings > API [[step 3](https://supabase.com/docs/guides/getting-started/quickstarts/nextjs)]
    - Add them to .env.local like:
 
    ```bash

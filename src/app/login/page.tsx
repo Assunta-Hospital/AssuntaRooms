@@ -175,15 +175,7 @@ export default function LoginPage() {
                     )}
                   </div>
                 </Label>
-                <Input
-                  id="avatar-url"
-                  type="text"
-                  placeholder="Or paste image URL here"
-                  value={avatarUrl}
-                  onChange={(e) => setAvatarUrl(e.target.value)}
-                  disabled={isLoading}
-                  className="text-center"
-                />
+
               </div>
 
               <div className="grid gap-2">
