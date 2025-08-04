@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, type FormEvent, useEffect } from "react";
@@ -33,12 +32,14 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("");
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [departments, setDepartments] = useState<string[]>([]);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+
 
   useEffect(() => {
     const fetchDepartments = async () => {
@@ -62,15 +63,44 @@ export default function LoginPage() {
     fetchDepartments();
   }, [toast]);
 
+
   const handleLoginSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setIsLoading(true);
-    await login(email, password);
-    setIsLoading(false);
+
+    try {
+      await login(email, password);
+      // If successful, you can redirect or show success toast
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Login Failed",
+        description: err.message || "Unknown error",
+      });
+
+      // Optional: Redirect to manage-users if account not approved
+      if (err.message === "Account is not approved") {
+        window.location.href = "/manage-users";
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+  const handleClear = () => {
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setName("");
+    setDepartment("");
+    setAvatarFile(null);
+    setAvatarPreview(null);
   };
 
   const handleSignupSubmit = async (event: FormEvent) => {
     event.preventDefault();
+
     if (password !== confirmPassword) {
       toast({
         variant: "destructive",
@@ -79,9 +109,41 @@ export default function LoginPage() {
       });
       return;
     }
+
     setIsLoading(true);
-    await signup(email, password, name, department, avatarUrl);
+
+    let publicUrl = "";
+
+    if (avatarFile) {
+      const fileExt = avatarFile.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const { data, error } = await supabase.storage
+        .from("avatars")
+        .upload(fileName, avatarFile, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (error) {
+        toast({
+          variant: "destructive",
+          title: "Avatar upload failed",
+          description: error.message,
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(fileName);
+
+      publicUrl = urlData.publicUrl;
+    }
+
+    await signup(email, password, name, department, publicUrl);
     setIsLoading(false);
+    handleClear();
   };
 
   return (
@@ -155,11 +217,12 @@ export default function LoginPage() {
           ) : (
             <form onSubmit={handleSignupSubmit} className="grid gap-4">
               <div className="flex flex-col items-center gap-4 mb-4">
-                <Label htmlFor="avatar-url" className="cursor-pointer">
-                  <div className="w-24 h-24 rounded-full bg-muted flex flex-col items-center justify-center text-muted-foreground hover:bg-muted/80 transition-colors">
-                    {avatarUrl ? (
+                <Label htmlFor="avatar-file" className="cursor-pointer">
+                  <div className="w-28 h-28 rounded-full bg-muted flex flex-col items-center justify-center text-muted-foreground hover:bg-muted/80 transition-colors">
+
+                    {avatarPreview ? (
                       <Image
-                        src={avatarUrl}
+                        src={avatarPreview}
                         alt="Avatar Preview"
                         width={96}
                         height={96}
@@ -168,11 +231,26 @@ export default function LoginPage() {
                     ) : (
                       <>
                         <Upload className="h-8 w-8 mb-1" />
-                        <span className="text-xs text-center">
-                          Upload a Picture
-                        </span>
+                        <span className="text-xs text-center">Upload a Picture</span>
                       </>
                     )}
+
+
+
+                    <input
+                      type="file"
+                      accept="image/*, .gif"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setAvatarFile(file);
+                          const preview = URL.createObjectURL(file);
+                          setAvatarPreview(preview);
+                        }
+                      }}
+                      className="hidden"
+                      id="avatar-file"
+                    />
                   </div>
                 </Label>
 
@@ -274,6 +352,7 @@ export default function LoginPage() {
                   onClick={() => {
                     setMode("signup");
                     setShowPassword(false);
+                    handleClear();
                   }}
                 >
                   Sign up
@@ -288,6 +367,7 @@ export default function LoginPage() {
                   onClick={() => {
                     setMode("login");
                     setShowPassword(false);
+                    handleClear();
                   }}
                 >
                   Sign in
