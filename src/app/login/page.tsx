@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const { login, signup } = useAuth();
@@ -39,6 +40,7 @@ export default function LoginPage() {
   const [departments, setDepartments] = useState<string[]>([]);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const router = useRouter();
 
 
   useEffect(() => {
@@ -112,40 +114,44 @@ export default function LoginPage() {
 
     setIsLoading(true);
 
-    let publicUrl = "";
-
-    if (avatarFile) {
-      const fileExt = avatarFile.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const { data, error } = await supabase.storage
-        .from("avatars")
-        .upload(fileName, avatarFile, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (error) {
-        toast({
-          variant: "destructive",
-          title: "Avatar upload failed",
-          description: error.message,
-        });
-        setIsLoading(false);
-        return;
+    try {
+      const formData = new FormData();
+      formData.append('email', email);
+      formData.append('password', password);
+      formData.append('name', name);
+      formData.append('department', department);
+      if (avatarFile) {
+        formData.append('avatar', avatarFile);
       }
 
-      const { data: urlData } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(fileName);
+      const response = await fetch('/api/signup', {
+        method: 'POST',
+        body: formData,
+        // Don't set Content-Type header - the browser will set it with the correct boundary
+      });
 
-      publicUrl = urlData.publicUrl;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Signup failed");
+      }
+
+      handleClear();
+      toast({
+        title: "Account Created!",
+        description: "Your account is pending admin approval.",
+      });
+      router.push("/status");
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Signup Failed",
+        description: error.message || "Please try again later.",
+      });
+    } finally {
+      setIsLoading(false);
     }
-
-    await signup(email, password, name, department, publicUrl);
-    setIsLoading(false);
-    handleClear();
   };
-
   return (
     <div className="flex items-center justify-center min-h-screen bg-background p-4">
       <Card className="mx-auto max-w-sm w-full shadow-lg">
@@ -234,8 +240,6 @@ export default function LoginPage() {
                         <span className="text-xs text-center">Upload a Picture</span>
                       </>
                     )}
-
-
 
                     <input
                       type="file"

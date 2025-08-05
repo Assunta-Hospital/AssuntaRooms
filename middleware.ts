@@ -1,24 +1,34 @@
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+export async function middleware(request: NextRequest) {
+  const response = NextResponse.next()
+  const supabase = createMiddlewareClient({ req: request, res: response })
 
-export function middleware(request: NextRequest) {
-  const token = request.cookies.get('auth_token')?.value;
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
 
   // Define protected paths
-  const protectedPaths = ['/dashboard', '/admin-settings', '/manage-users'];
-
+  const protectedPaths = ['/dashboard', '/admin-settings', '/manage-users']
   const isProtected = protectedPaths.some((path) =>
     request.nextUrl.pathname.startsWith(path)
-  );
+  )
 
-  if (isProtected && !token) {
-    return NextResponse.redirect(new URL('/login', request.url));
+  // Redirect to login if trying to access protected path without session
+  if (isProtected && !session) {
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  return NextResponse.next();
+  // Redirect away from auth pages if already logged in
+  if (request.nextUrl.pathname.startsWith('/login') && session) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  return response
 }
 
 export const config = {
-  matcher: ['/dashboard', '/admin-settings', '/manage-users'],
-};
+  matcher: ['/dashboard', '/admin-settings', '/manage-users', '/login'],
+}

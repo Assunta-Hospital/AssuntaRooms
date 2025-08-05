@@ -18,7 +18,86 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '@/components/ui/table';
 import {
-  Badge
+  Badge // 2. Get user profile
+    const { data: dbUser, error: dbError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('user_id', authData?.user?.id || '')
+    .single();
+
+if (dbError || !dbUser) {
+  toast({
+    variant: "destructive",
+    title: "Login Failed",
+    description: "User profile not found",
+    className: "bg-red-600 hover:bg-red-700",
+  });
+  return { success: false };
+}
+
+// 3. Handle account status with redirect for approved users
+const statusConfig = {
+  approved: {
+    className: "bg-green-600 hover:bg-green-700",
+    action: () => {
+      setUser(dbUser);
+      toast({
+        title: "Login Successful",
+        description: "Redirecting to dashboard...",
+        className: "bg-green-600 hover:bg-green-700",
+      });
+      router.push('/dashboard'); // Add this line
+      return { success: true };
+    }
+  },
+  pending: {
+    className: "bg-yellow-500 hover:bg-yellow-600",
+    action: () => {
+      toast({
+        title: "Account Pending",
+        description: "Your account is awaiting approval",
+        className: "bg-yellow-500 hover:bg-yellow-600",
+      });
+      return { success: false };
+    }
+  },
+  rejected: {
+    className: "bg-red-600 hover:bg-red-700",
+    action: () => {
+      toast({
+        title: "Account Rejected",
+        description: "Please contact administrator",
+        className: "bg-red-600 hover:bg-red-700",
+      });
+      return { success: false };
+    }
+  },
+  suspended: {
+    className: "bg-slate-600 hover:bg-slate-700",
+    action: () => {
+      toast({
+        title: "Account Suspended",
+        description: "Please contact support",
+        className: "bg-slate-600 hover:bg-slate-700",
+      });
+      return { success: false };
+    }
+  }
+};
+
+return statusConfig[dbUser.status as keyof typeof statusConfig].action();
+
+  } catch (err: any) {
+  console.error("Login error:", err);
+  toast({
+    variant: "destructive",
+    title: "Login Failed",
+    description: err.message || "Invalid credentials",
+    className: "bg-red-600 hover:bg-red-700",
+  });
+  return { success: false };
+}
+};
 } from '@/components/ui/badge';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
@@ -90,7 +169,7 @@ export default function ManageUsersPage() {
       const [key, direction] = sortKey.split('-');
       const dir = direction === 'asc' ? 1 : -1;
 
-      if (key === 'name') return a.name.localeCompare(b.name) * dir;
+      if (key === 'name') return a.username.localeCompare(b.username) * dir;
       if (key === 'status') return a.status.localeCompare(b.status) * dir;
 
       return 0;
