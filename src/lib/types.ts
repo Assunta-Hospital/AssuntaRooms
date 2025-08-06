@@ -2,11 +2,11 @@
 export type Role = "Admin" | "Manager" | "User";
 export type UserStatus = "approved" | "pending" | "rejected" | "suspended";
 
-export type Department = "Nursing" | "Radiology" | "Cardiology" | "Oncology" | "Neurology" | "Pediatrics" | "Surgery" | "Emergency" | "Pharmacy" | "Laboratory" | "Physiotherapy" | "IT" | "Operations" | "Marketing" | "Sales" | "HR";
+export type Department = "Nursing" | "Radiology" | "Cardiology" | "Oncology" | "Neurology" | "Pediatrics" | "Surgery" | "Emergency" | "Pharmacy" | "Laboratory" | "Physiotherapy" | "IT" | "Operations" | "Marketing" | "Sales" | "HR" | "others";
 
 export interface User {
-  id: string;
-  name: string;
+  id: string; // change to appropriate id alksdfjla;sdk
+  username: string;
   email: string;
   password?: string; // Note: In a real app, never send passwords to the client.
   role: Role;
@@ -21,7 +21,7 @@ export type Amenity = "Projector" | "Whiteboard" | "Video Conferencing" | "TV Sc
 
 export interface Room {
   id: string;
-  name:string;
+  name: string;
   capacity: number;
   level: number;
   amenities: Amenity[];

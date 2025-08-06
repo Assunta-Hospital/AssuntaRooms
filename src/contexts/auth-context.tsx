@@ -1,33 +1,45 @@
-
 "use client";
 
-import React, { createContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
-import { mockUsers } from '@/lib/mock-data';
-import type { User, Department } from '@/lib/types';
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useCallback,
+  type ReactNode,
+} from "react";
+import { useRouter } from "next/navigation";
+import type { User } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
-import { format } from 'date-fns';
+import { supabase } from "@/lib/supabase";
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, pass: string) => Promise<void>;
-  signup: (email: string, pass: string, name: string, department: string, avatarUrl: string) => Promise<void>;
+  setUser: React.Dispatch<React.SetStateAction<User | null>>;
+  login: (
+    email: string,
+    password: string
+  ) => Promise<{ success: boolean; message?: string }>;
+  signup: (
+    email: string,
+    password: string,
+    username: string,
+    dept_id: string,
+    avatarUrl: string
+  ) => Promise<void>;
   logout: () => void;
   updateUser: (updatedUser: User) => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType>({
   user: null,
+  setUser: () => { },
   isLoading: true,
-  login: async () => {},
-  signup: async () => {},
-  logout: () => {},
-  updateUser: async () => {},
+  login: async () => ({ success: false }),
+  signup: async () => { },
+  logout: () => { },
+  updateUser: async () => { },
 });
-
-// Use a simple in-memory store for users that persists across HMR
-let userStore = [...mockUsers];
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -36,100 +48,214 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check for user in localStorage on initial load
-    try {
-        const storedUser = localStorage.getItem('assunta-user');
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
+    const restoreSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session?.user?.id) {
+        // Get user data from your users table
+        const { data: dbUser, error } = await supabase
+          .from("users")
+          .select("*")
+          .eq("user_id", session.user.id)
+          .single();
+
+        if (!error && dbUser) {
+          setUser(dbUser);
         }
-    } catch (error) {
-        console.error("Failed to parse user from localStorage", error);
-        localStorage.removeItem('assunta-user');
-    }
-    setIsLoading(false);
-  }, []);
-
-  const login = useCallback(async (email: string, pass: string) => {
-    // Find user in the mock data
-    const foundUser = userStore.find(u => u.email === email && u.password === pass);
-
-    if (foundUser) {
-        setUser(foundUser);
-        localStorage.setItem('assunta-user', JSON.stringify(foundUser));
-      
-        if (foundUser.status !== 'approved') {
-            router.push('/status');
-        } else {
-            router.push('/dashboard');
-        }
-    } else {
-        toast({
-            variant: "destructive",
-            title: "Login Failed",
-            description: "Invalid email or password. Please try again.",
-        });
-    }
-  }, [router, toast]);
-
-  const signup = useCallback(async (email: string, pass: string, name: string, department: string, avatarUrl: string) => {
-    // Check if user already exists
-    if (userStore.some(u => u.email === email)) {
-        toast({
-            variant: 'destructive',
-            title: 'Sign-up Error',
-            description: 'An account with this email already exists.',
-        });
-        return;
-    }
-
-    // Create a new user (in-memory)
-    const newUser: User = {
-        id: `user-${new Date().getTime()}`,
-        name,
-        email,
-        password: pass,
-        role: 'User',
-        status: 'pending', // New signups are pending
-        avatar: avatarUrl || `https://i.pravatar.cc/150?u=${email}`,
-        department: department as Department,
-        createdAt: format(new Date(), 'yyyy-MM-dd'),
+      }
+      setIsLoading(false);
     };
-    
-    userStore.push(newUser);
-    setUser(newUser);
-    localStorage.setItem('assunta-user', JSON.stringify(newUser));
 
-    toast({
-        title: 'Account Created!',
-        description: "Your account is now pending approval from an administrator.",
+    restoreSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user?.id) {
+        // Update user data when auth state changes
+        supabase
+          .from("users")
+          .select("*")
+          .eq("user_id", session.user.id)
+          .single()
+          .then(({ data: dbUser }) => {
+            if (dbUser) setUser(dbUser);
+          });
+      } else {
+        setUser(null);
+      }
     });
 
-    router.push('/status');
+    return () => subscription.unsubscribe();
+  }, []);
 
-  }, [router, toast]);
+  const login = async (email: string, password: string) => {
+    try {
+      setIsLoading(true); // Set loading state
 
-  const logout = useCallback(() => {
-    setUser(null);
-    localStorage.removeItem('assunta-user');
-    router.push('/login');
-  }, [router]);
-  
-  const updateUser = useCallback(async (updatedUser: User) => {
-      // Update in-memory store
-      userStore = userStore.map(u => u.id === updatedUser.id ? updatedUser : u);
-      
-      // Update state and localStorage
-      setUser(updatedUser);
-      localStorage.setItem('assunta-user', JSON.stringify(updatedUser));
-
-      toast({
-          title: "Profile Updated",
-          description: "Your profile has been changed successfully."
+      // 1. Attempt Supabase authentication
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
-  }, [toast]);
+
+      // 2. Handle authentication errors
+      if (authError) {
+        // Check for legacy user (password in public.users)
+        const { data: legacyUser, error: legacyError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', email)
+          .single();
+
+        if (legacyError || !legacyUser) {
+          throw new Error("Invalid credentials");
+        }
+
+        // Migrate legacy user to Supabase Auth
+        const { error: migrateError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { username: legacyUser.username } }
+        });
+
+        if (migrateError) throw migrateError;
+
+        // Retry authentication after migration
+        const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (retryError) throw retryError;
+      }
+
+      // 3. Fetch user profile from public.users
+      const { data: dbUser, error: dbError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('user_id', authData?.user?.id || '')
+        .single();
+
+      if (dbError || !dbUser) {
+        throw new Error("User profile not found");
+      }
+
+      // 4. Handle account status with appropriate UI feedback
+      const statusHandlers = {
+        approved: () => {
+          setUser(dbUser);
+          toast({
+            title: "Login Successful",
+            description: "Redirecting to dashboard...",
+            className: "bg-green-600 hover:bg-green-700",
+          });
+          router.push('/dashboard'); // Redirect approved users
+          return { success: true };
+        },
+        pending: () => {
+          toast({
+            title: "Account Pending",
+            description: "Your account is awaiting admin approval",
+            className: "bg-yellow-500 hover:bg-yellow-600",
+          });
+          return { success: false };
+        },
+        rejected: () => {
+          toast({
+            title: "Account Rejected",
+            description: "Please contact your administrator",
+            className: "bg-red-600 hover:bg-red-700",
+          });
+          return { success: false };
+        },
+        suspended: () => {
+          toast({
+            title: "Account Suspended",
+            description: "Please contact support to reactivate",
+            className: "bg-slate-600 hover:bg-slate-700",
+          });
+          return { success: false };
+        }
+      };
+
+      // Execute the appropriate status handler
+      return statusHandlers[dbUser.status as keyof typeof statusHandlers]();
+
+    } catch (err: any) {
+      console.error("Login error:", err);
+
+      // Show error toast with appropriate styling
+      toast({
+        variant: "destructive",
+        title: "Login Failed",
+        description: err.message || "Invalid email or password",
+        className: "bg-red-600 hover:bg-red-700",
+      });
+
+      return { success: false, message: err.message };
+    } finally {
+      setIsLoading(false); // Clear loading state
+    }
+  };
+
+  const signup = useCallback(
+    async (
+      email: string,
+      password: string,
+      username: string,
+      dept_id: string,
+      avatarUrl: string
+    ) => {
+      // Just forward to API route
+      const response = await fetch('/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name: username, department: dept_id, avatarUrl }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Signup failed");
+      }
+
+      return result;
+    },
+    [router, toast]
+  );
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    router.push("/login");
+  }, [router]);
+
+  const updateUser = useCallback(
+    async (updatedUser: User) => {
+      const { error } = await supabase
+        .from("users")
+        .update(updatedUser)
+        .eq("user_id", updatedUser.id);
+
+      if (!error) {
+        setUser(updatedUser);
+        toast({
+          title: "Profile Updated",
+          description: "Your profile has been changed successfully.",
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Update Failed",
+          description: "Could not update your profile.",
+        });
+      }
+    },
+    [toast]
+  );
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, signup, logout, updateUser }}>
+    <AuthContext.Provider
+      value={{ user, setUser, isLoading, login, signup, logout, updateUser }}
+    >
       {children}
     </AuthContext.Provider>
   );
