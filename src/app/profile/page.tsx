@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState } from 'react';
+import { useState, useRef, ChangeEvent, useEffect } from 'react';
 import Image from 'next/image';
 import { useAuth } from '@/hooks/use-auth';
 import { DashboardLayout } from '@/components/dashboard-layout';
@@ -17,18 +16,36 @@ import type { User } from '@/lib/types';
 import { format, parseISO } from "date-fns";
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger, DialogClose } from '@/components/ui/dialog';
-import { Upload } from 'lucide-react';
+import { Upload, Loader2, X } from 'lucide-react';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+
+const hospitalDepartments = [
+  "Nursing", "Radiology", "Cardiology", "Oncology", "Neurology",
+  "Pediatrics", "Surgery", "Emergency", "Pharmacy", "Laboratory",
+  "Physiotherapy", "IT", "Operations", "Marketing", "Sales", "HR", "Others"
+];
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuth();
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const supabase = createClientComponentClient();
 
   // State for editable fields
   const [name, setName] = useState(user?.username || '');
   const [selectedDepartment, setSelectedDepartment] = useState(user?.dept_id || '');
-  const [avatarUrl, setAvatarUrl] = useState(user?.pfp_url || '');
   const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Clean up object URLs to avoid memory leaks
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   if (!user) {
     return <DashboardLayout><div>Loading profile...</div></DashboardLayout>;
@@ -36,9 +53,9 @@ export default function ProfilePage() {
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
-  }
+  };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) {
       toast({
         variant: 'destructive',
@@ -47,30 +64,130 @@ export default function ProfilePage() {
       });
       return;
     }
-    const updatedUser = { ...user, name: name, department: selectedDepartment };
-    updateUser(updatedUser);
-    setIsEditing(false);
-    toast({
-      title: "Profile Updated",
-      description: "Your profile has been changed successfully."
-    });
-  }
 
-  const handleAvatarSave = () => {
-    const updatedUser = { ...user, avatar: avatarUrl };
-    updateUser(updatedUser);
-    toast({
-      title: "Avatar Updated",
-      description: "Your profile picture has been changed."
-    });
-    setIsAvatarDialogOpen(false);
-  }
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({
+          username: name,
+          dept_id: selectedDepartment
+        })
+        .eq('user_id', user.user_id);
+
+      if (error) throw error;
+
+      updateUser({ ...user, username: name, dept_id: selectedDepartment });
+      setIsEditing(false);
+      toast({
+        title: "Profile Updated",
+        description: "Your profile has been updated successfully."
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: error.message || 'Failed to update profile',
+      });
+    }
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.match('image.*')) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid File',
+        description: 'Please select an image file (JPEG, PNG, .GIF, etc.)',
+      });
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        variant: 'destructive',
+        title: 'File Too Large',
+        description: 'Please select an image smaller than 2MB',
+      });
+      return;
+    }
+
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const handleAvatarSave = async () => {
+    if (!selectedFile) {
+      toast({
+        variant: 'destructive',
+        title: 'No File Selected',
+        description: 'Please select an image to upload',
+      });
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      // Generate unique filename
+      const fileExt = selectedFile.name.split('.').pop();
+      const fileName = `${user.user_id}-${Date.now()}.${fileExt}`;
+      const filePath = `public/${fileName}`;
+
+      // Upload the file
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, selectedFile, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: selectedFile.type
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      // Update user profile
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ pfp_url: publicUrl })
+        .eq('user_id', user.user_id);
+
+      if (updateError) throw updateError;
+
+      // Update local state
+      updateUser({ ...user, pfp_url: publicUrl });
+      setSelectedFile(null);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+
+      toast({
+        title: "Avatar Updated",
+        description: "Your profile picture has been changed successfully. Please reload page to see changes"
+      });
+      setIsAvatarDialogOpen(false);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Upload Failed',
+        description: error.message || 'Failed to upload avatar',
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleCancel = () => {
     setName(user.username);
     setSelectedDepartment(user.dept_id);
     setIsEditing(false);
-  }
+  };
 
   const getStatusClass = (status: User['status']) => {
     switch (status) {
@@ -93,37 +210,103 @@ export default function ProfilePage() {
         <Card className="max-w-2xl mx-auto">
           <CardHeader>
             <div className="flex flex-col items-center space-y-4 md:flex-row md:space-y-0 md:space-x-6">
-              <div className="relative">
-                <Avatar className="h-24 w-24 border-4 border-primary">
-                  <AvatarImage src={user.pfp_url} alt={name} />
-                  <AvatarFallback className="bg-muted text-muted-foreground text-3xl">{getInitials(name)}</AvatarFallback>
+              <div className="relative group">
+                <Avatar className="h-24 w-24 border-4 border-primary group-hover:opacity-80 transition-opacity">
+                  <AvatarImage src={user.pfp_url} alt={user.username} />
+                  <AvatarFallback className="bg-muted text-muted-foreground text-3xl">
+                    {getInitials(user.username)}
+                  </AvatarFallback>
                 </Avatar>
                 <Dialog open={isAvatarDialogOpen} onOpenChange={setIsAvatarDialogOpen}>
                   <DialogTrigger asChild>
-                    <Button size="icon" className="absolute -bottom-2 -right-2 rounded-full h-8 w-8">
+                    <Button
+                      size="icon"
+                      className="absolute -bottom-2 -right-2 rounded-full h-8 w-8"
+                      variant="secondary"
+                    >
                       <Upload className="h-4 w-4" />
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
                       <DialogTitle>Change Profile Picture</DialogTitle>
-                      <DialogDescription>Paste the URL of your new profile picture below.</DialogDescription>
+                      <DialogDescription>
+                        Upload a new profile picture (JPG, PNG up to 2MB)
+                      </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
-                      <div className="flex justify-center">
-                        <Avatar className="h-32 w-32 border-4 border-primary">
-                          <AvatarImage src={avatarUrl} alt={name} />
-                          <AvatarFallback className="bg-muted text-muted-foreground text-4xl">{getInitials(name)}</AvatarFallback>
-                        </Avatar>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="avatar-url-profile">Image URL</Label>
-                        <Input id="avatar-url-profile" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} />
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="relative">
+                          <Avatar className="h-32 w-32 border-4 border-primary">
+                            <AvatarImage src={previewUrl || user.pfp_url} />
+                            <AvatarFallback className="bg-muted text-muted-foreground text-4xl">
+                              {getInitials(user.username)}
+                            </AvatarFallback>
+                          </Avatar>
+                          {previewUrl && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="absolute top-0 right-0 rounded-full h-6 w-6"
+                              onClick={() => {
+                                setSelectedFile(null);
+                                setPreviewUrl(null);
+                                if (fileInputRef.current) fileInputRef.current.value = '';
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleFileChange}
+                          accept="image/*, .gif"
+                          className="hidden"
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          {selectedFile ? 'Change Image' : 'Select Image'}
+                        </Button>
+                        {selectedFile && (
+                          <div className="text-center">
+                            <p className="text-sm text-muted-foreground">
+                              {selectedFile.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {(selectedFile.size / 1024).toFixed(1)} KB
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <DialogFooter>
-                      <Button variant="outline" onClick={() => setIsAvatarDialogOpen(false)}>Cancel</Button>
-                      <Button onClick={handleAvatarSave}>Save</Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setIsAvatarDialogOpen(false);
+                          setSelectedFile(null);
+                          setPreviewUrl(null);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleAvatarSave}
+                        disabled={!selectedFile || isUploading}
+                      >
+                        {isUploading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Uploading...
+                          </>
+                        ) : (
+                          'Save Changes'
+                        )}
+                      </Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
@@ -131,8 +314,15 @@ export default function ProfilePage() {
               <div className="text-center md:text-left">
                 {isEditing ? (
                   <div className="space-y-1">
-                    <Label htmlFor="name" className="text-sm font-semibold text-muted-foreground px-1">Full Name</Label>
-                    <Input id="name" value={name} onChange={(e) => setName(e.target.value)} className="text-3xl font-headline h-auto p-1 border-0 rounded-none focus-visible:ring-0" />
+                    <Label htmlFor="name" className="text-sm font-semibold text-muted-foreground px-1">
+                      Full Name
+                    </Label>
+                    <Input
+                      id="name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="text-3xl font-headline h-auto p-1 border-0 rounded-none focus-visible:ring-0"
+                    />
                   </div>
                 ) : (
                   <CardTitle className="text-3xl font-headline">{user.username}</CardTitle>
@@ -149,7 +339,11 @@ export default function ProfilePage() {
               </div>
               <div className="space-y-1">
                 <p className="font-semibold text-muted-foreground">Status</p>
-                <span><Badge className={cn('text-white', getStatusClass(user.status))}>{user.status}</Badge></span>
+                <span>
+                  <Badge className={cn('text-white', getStatusClass(user.status))}>
+                    {user.status}
+                  </Badge>
+                </span>
               </div>
               <div className="space-y-1">
                 <Label className="font-semibold text-muted-foreground">Department</Label>
@@ -174,18 +368,26 @@ export default function ProfilePage() {
               </div>
               <div className="space-y-1 col-span-1 md:col-span-2">
                 <p className="font-semibold text-muted-foreground">User ID</p>
-                <p className="text-xs font-mono text-muted-foreground bg-secondary p-2 rounded-md">{user.user_id}</p>
+                <p className="text-xs font-mono text-muted-foreground bg-secondary p-2 rounded-md">
+                  {user.user_id}
+                </p>
               </div>
             </div>
           </CardContent>
           <CardFooter className="flex justify-end space-x-2">
             {isEditing ? (
               <>
-                <Button variant="outline" onClick={handleCancel}>Cancel</Button>
-                <Button onClick={handleSave}>Save Changes</Button>
+                <Button variant="outline" onClick={handleCancel}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSave}>
+                  Save Changes
+                </Button>
               </>
             ) : (
-              <Button onClick={() => setIsEditing(true)}>Edit Profile</Button>
+              <Button onClick={() => setIsEditing(true)}>
+                Edit Profile
+              </Button>
             )}
           </CardFooter>
         </Card>

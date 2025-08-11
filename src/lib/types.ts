@@ -2,10 +2,7 @@ import { Timestamp } from "next/dist/server/lib/cache-handlers/types";
 
 export type Role = "Admin" | "Manager" | "User";
 export type UserStatus = "approved" | "pending" | "rejected" | "suspended";
-
 export type Department = "Nursing" | "Radiology" | "Cardiology" | "Oncology" | "Neurology" | "Pediatrics" | "Surgery" | "Emergency" | "Pharmacy" | "Laboratory" | "Physiotherapy" | "IT" | "Operations" | "Marketing" | "Sales" | "HR" | "others";
-
-
 
 export interface User {
   user_id: string;     // Changed from id to user_id
@@ -19,7 +16,6 @@ export interface User {
 }
 
 export type Amenity = "Projector" | "Whiteboard" | "Video Conferencing" | "TV Screen" | "Coffee Machine" | "LAN Cable" | "HDMI Cable";
-
 
 export interface Room {
   room_id: string;
