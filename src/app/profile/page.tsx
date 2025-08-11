@@ -25,9 +25,9 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
 
   // State for editable fields
-  const [name, setName] = useState(user?.name || '');
-  const [selectedDepartment, setSelectedDepartment] = useState(user?.department || '');
-  const [avatarUrl, setAvatarUrl] = useState(user?.avatar || '');
+  const [name, setName] = useState(user?.username || '');
+  const [selectedDepartment, setSelectedDepartment] = useState(user?.dept_id || '');
+  const [avatarUrl, setAvatarUrl] = useState(user?.pfp_url || '');
   const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
 
   if (!user) {
@@ -67,8 +67,8 @@ export default function ProfilePage() {
   }
 
   const handleCancel = () => {
-    setName(user.name);
-    setSelectedDepartment(user.department);
+    setName(user.username);
+    setSelectedDepartment(user.dept_id);
     setIsEditing(false);
   }
 
@@ -95,7 +95,7 @@ export default function ProfilePage() {
             <div className="flex flex-col items-center space-y-4 md:flex-row md:space-y-0 md:space-x-6">
               <div className="relative">
                 <Avatar className="h-24 w-24 border-4 border-primary">
-                  <AvatarImage src={user.avatar} alt={name} />
+                  <AvatarImage src={user.pfp_url} alt={name} />
                   <AvatarFallback className="bg-muted text-muted-foreground text-3xl">{getInitials(name)}</AvatarFallback>
                 </Avatar>
                 <Dialog open={isAvatarDialogOpen} onOpenChange={setIsAvatarDialogOpen}>
@@ -135,7 +135,7 @@ export default function ProfilePage() {
                     <Input id="name" value={name} onChange={(e) => setName(e.target.value)} className="text-3xl font-headline h-auto p-1 border-0 rounded-none focus-visible:ring-0" />
                   </div>
                 ) : (
-                  <CardTitle className="text-3xl font-headline">{user.name}</CardTitle>
+                  <CardTitle className="text-3xl font-headline">{user.username}</CardTitle>
                 )}
                 <CardDescription>{user.email}</CardDescription>
               </div>
@@ -165,16 +165,16 @@ export default function ProfilePage() {
                     </SelectContent>
                   </Select>
                 ) : (
-                  <p className="">{user.department}</p>
+                  <p className="">{user.dept_id}</p>
                 )}
               </div>
               <div className="space-y-1">
                 <p className="font-semibold text-muted-foreground">Account Created</p>
-                <p className="">{user.createdAt ? format(parseISO(user.createdAt), "PPP") : 'N/A'}</p>
+                <p className="">{user.created_at ? format(parseISO(user.created_at), "PPP") : 'N/A'}</p>
               </div>
               <div className="space-y-1 col-span-1 md:col-span-2">
                 <p className="font-semibold text-muted-foreground">User ID</p>
-                <p className="text-xs font-mono text-muted-foreground bg-secondary p-2 rounded-md">{user.id}</p>
+                <p className="text-xs font-mono text-muted-foreground bg-secondary p-2 rounded-md">{user.user_id}</p>
               </div>
             </div>
           </CardContent>

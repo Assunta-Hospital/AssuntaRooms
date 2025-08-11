@@ -63,7 +63,7 @@ export default function AdminDashboardPage() {
       roomCounts[booking.roomId] = (roomCounts[booking.roomId] || 0) + 1;
     });
     const popData = Object.entries(roomCounts).map(([roomId, value], index) => {
-      const room = rooms.find(r => r.id === roomId);
+      const room = rooms.find(r => r.room_id === roomId);
       return {
         name: room?.name || `Room ${roomId}`,
         value,

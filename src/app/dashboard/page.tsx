@@ -117,7 +117,7 @@ export default function DashboardPage() {
           ) : rooms.length > 0 ? (
             rooms.map((room) => (
               <RoomCard
-                key={room.id}
+                key={room.room_id}
                 room={room}
                 date={date}
                 setDate={setDate}
@@ -169,7 +169,6 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
       <CardHeader className="p-0 relative h-48">
         <Image
           src={room.image}
-          data-ai-hint={room.dataAiHint}
           alt={room.name}
           layout="fill"
           objectFit="cover"
@@ -178,12 +177,16 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
       <CardContent className="p-6 flex flex-col flex-grow">
         <h3 className="font-headline text-xl mb-2">{room.name}</h3>
         <div className="text-muted-foreground text-sm space-y-3 flex-grow">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            <span>Up to {room.capacity} people</span>
-          </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {room.amenities.map(a => <Badge key={a} variant="secondary">{a}</Badge>)}
+            {room.tags?.map(tag => (
+              <Badge key={tag} variant="secondary">
+                {tag}
+              </Badge>
+            )) ?? (
+                <span className="text-muted-foreground text-sm">
+                  No amenities listed
+                </span>
+              )}
           </div>
         </div>
 

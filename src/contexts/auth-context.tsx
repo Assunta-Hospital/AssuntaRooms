@@ -231,7 +231,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const { error } = await supabase
         .from("users")
         .update(updatedUser)
-        .eq("user_id", updatedUser.id);
+        .eq("user_id", updatedUser.user_id);
 
       if (!error) {
         setUser(updatedUser);
