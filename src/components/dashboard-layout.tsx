@@ -33,16 +33,17 @@ type MenuItem = {
   roles: string[];
 };
 
+// in db must follow lowercase if not cant show menuItems
 const menuItems: MenuItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["Admin", "Manager", "User"] },
-  { href: "/bookings", label: "My Bookings", icon: CalendarDays, roles: ["Admin", "Manager", "User"] },
-  { href: "/profile", label: "My Profile", icon: User, roles: ["Admin", "Manager", "User"] },
-  { type: 'divider', roles: ["Admin", "Manager"] },
-  { type: 'heading', label: 'Management', roles: ["Admin", "Manager"] },
-  { href: "/manage-bookings", label: "All Bookings", icon: BookMarked, roles: ["Admin", "Manager"] },
-  { href: "/manage-venues", label: "Manage Venues", icon: Building, roles: ["Admin", "Manager"] },
-  { href: "/manage-users", label: "User Management", icon: Users, roles: ["Admin"] },
-  { href: "/admin-settings", label: "Admin Dashboard", icon: Shield, roles: ["Admin"] },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "manager", "user"] },
+  { href: "/bookings", label: "My Bookings", icon: CalendarDays, roles: ["admin", "manager", "user"] },
+  { href: "/profile", label: "My Profile", icon: User, roles: ["admin", "manager", "user"] },
+  { type: 'divider', roles: ["admin", "manager"] },
+  { type: 'heading', label: 'Management', roles: ["admin", "manager"] },
+  { href: "/manage-bookings", label: "All Bookings", icon: BookMarked, roles: ["admin", "manager"] },
+  { href: "/manage-venues", label: "Manage Venues", icon: Building, roles: ["admin", "manager"] },
+  { href: "/manage-users", label: "User Management", icon: Users, roles: ["admin"] },
+  { href: "/admin-settings", label: "Admin Dashboard", icon: Shield, roles: ["admin"] },
 ];
 
 interface AppSidebarProps {
