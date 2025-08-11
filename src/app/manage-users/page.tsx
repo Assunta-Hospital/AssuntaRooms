@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -6,7 +5,8 @@ import {
   ShieldX,
   MoreVertical,
   UserX,
-  UserCheck
+  UserCheck,
+  Loader2
 } from 'lucide-react';
 import {
   Button
@@ -18,86 +18,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '@/components/ui/table';
 import {
-  Badge // 2. Get user profile
-    const { data: dbUser, error: dbError } = await supabase
-    .from('users')
-    .select('*')
-    .eq('user_id', authData?.user?.id || '')
-    .single();
-
-if (dbError || !dbUser) {
-  toast({
-    variant: "destructive",
-    title: "Login Failed",
-    description: "User profile not found",
-    className: "bg-red-600 hover:bg-red-700",
-  });
-  return { success: false };
-}
-
-// 3. Handle account status with redirect for approved users
-const statusConfig = {
-  approved: {
-    className: "bg-green-600 hover:bg-green-700",
-    action: () => {
-      setUser(dbUser);
-      toast({
-        title: "Login Successful",
-        description: "Redirecting to dashboard...",
-        className: "bg-green-600 hover:bg-green-700",
-      });
-      router.push('/dashboard'); // Add this line
-      return { success: true };
-    }
-  },
-  pending: {
-    className: "bg-yellow-500 hover:bg-yellow-600",
-    action: () => {
-      toast({
-        title: "Account Pending",
-        description: "Your account is awaiting approval",
-        className: "bg-yellow-500 hover:bg-yellow-600",
-      });
-      return { success: false };
-    }
-  },
-  rejected: {
-    className: "bg-red-600 hover:bg-red-700",
-    action: () => {
-      toast({
-        title: "Account Rejected",
-        description: "Please contact administrator",
-        className: "bg-red-600 hover:bg-red-700",
-      });
-      return { success: false };
-    }
-  },
-  suspended: {
-    className: "bg-slate-600 hover:bg-slate-700",
-    action: () => {
-      toast({
-        title: "Account Suspended",
-        description: "Please contact support",
-        className: "bg-slate-600 hover:bg-slate-700",
-      });
-      return { success: false };
-    }
-  }
-};
-
-return statusConfig[dbUser.status as keyof typeof statusConfig].action();
-
-  } catch (err: any) {
-  console.error("Login error:", err);
-  toast({
-    variant: "destructive",
-    title: "Login Failed",
-    description: err.message || "Invalid credentials",
-    className: "bg-red-600 hover:bg-red-700",
-  });
-  return { success: false };
-}
-};
+  Badge
 } from '@/components/ui/badge';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
@@ -118,7 +39,8 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useEffect, useMemo, useState } from 'react';
-import type { User, UserStatus } from '@/lib/types'; // make sure 'User' has `id`, `email`, `name`, `role`, `status`
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import type { User, UserStatus } from '@/lib/types';
 
 const statuses: UserStatus[] = ['approved', 'pending', 'rejected', 'suspended'];
 
@@ -127,17 +49,27 @@ export default function ManageUsersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<UserStatus | 'all'>('all');
   const [sortKey, setSortKey] = useState('name-asc');
+  const [isUpdating, setIsUpdating] = useState(false);
   const { toast } = useToast();
+  const supabase = createClientComponentClient();
 
   useEffect(() => {
     async function fetchUsers() {
       setIsLoading(true);
       try {
-        const res = await fetch('/api/users');
-        const data = await res.json();
-        setUsers(data.users || []);
-      } catch {
-        toast({ variant: 'destructive', title: 'Failed to load users' });
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        setUsers(data || []);
+      } catch (error) {
+        toast({
+          variant: 'destructive',
+          title: 'Failed to load users',
+          description: error instanceof Error ? error.message : 'An error occurred'
+        });
       } finally {
         setIsLoading(false);
       }
@@ -147,17 +79,34 @@ export default function ManageUsersPage() {
   }, []);
 
   const handleStatusChange = async (userId: string, newStatus: UserStatus) => {
-    setUsers(prev => prev.map(user => user.id === userId ? { ...user, status: newStatus } : user));
-    toast({
-      title: 'User Status Updated',
-      description: `User has been ${newStatus}`
-    });
+    setIsUpdating(true);
+    try {
+      // Update in Supabase
+      const { error } = await supabase
+        .from('users')
+        .update({ status: newStatus })
+        .eq('user_id', userId);
 
-    // Optional: call API to persist change
-    await fetch(`/api/users/${userId}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status: newStatus }),
-    });
+      if (error) throw error;
+
+      // Update local state
+      setUsers(prev => prev.map(user =>
+        user.user_id === userId ? { ...user, status: newStatus } : user
+      ));
+
+      toast({
+        title: 'User Status Updated',
+        description: `User status changed to ${newStatus}`
+      });
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: error instanceof Error ? error.message : 'Failed to update user status'
+      });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const filteredAndSorted = useMemo(() => {
@@ -170,7 +119,8 @@ export default function ManageUsersPage() {
       const dir = direction === 'asc' ? 1 : -1;
 
       if (key === 'name') return a.username.localeCompare(b.username) * dir;
-      if (key === 'status') return a.status.localeCompare(b.status) * dir;
+      if (key === 'status') return (a.status || '').localeCompare(b.status || '') * dir;
+      if (key === 'date') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime() * dir;
 
       return 0;
     });
@@ -197,14 +147,19 @@ export default function ManageUsersPage() {
           <div className="flex gap-4">
             <div className="flex items-center gap-2">
               <Label>Filter by Status</Label>
-              <Select value={statusFilter} onValueChange={val => setStatusFilter(val as any)}>
+              <Select
+                value={statusFilter}
+                onValueChange={val => setStatusFilter(val as UserStatus | 'all')}
+              >
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="Filter..." />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
                   {statuses.map(status => (
-                    <SelectItem key={status} value={status}>{status}</SelectItem>
+                    <SelectItem key={status} value={status}>
+                      {status.charAt(0).toUpperCase() + status.slice(1)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -218,8 +173,7 @@ export default function ManageUsersPage() {
                 <SelectContent>
                   <SelectItem value="name-asc">Name (A-Z)</SelectItem>
                   <SelectItem value="name-desc">Name (Z-A)</SelectItem>
-                  <SelectItem value="status-asc">Status (A-Z)</SelectItem>
-                  <SelectItem value="status-desc">Status (Z-A)</SelectItem>
+                  <SelectItem value="date-asc">Date (Oldest)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -233,6 +187,7 @@ export default function ManageUsersPage() {
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Department</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -244,52 +199,88 @@ export default function ManageUsersPage() {
                     <TableCell><Skeleton className="h-5 w-40" /></TableCell>
                     <TableCell><Skeleton className="h-6 w-16 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-6 w-24 rounded-full" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-20" /></TableCell>
                     <TableCell className="text-right"><Skeleton className="h-8 w-8 rounded-md" /></TableCell>
                   </TableRow>
                 ))
-              ) : filteredAndSorted.map(user => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.name}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell><Badge variant="secondary">{user.role}</Badge></TableCell>
-                  <TableCell>
-                    <Badge className={cn('text-white', getStatusColor(user.status))}>
-                      {user.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {user.status === 'pending' && (
-                          <>
-                            <DropdownMenuItem onSelect={() => handleStatusChange(user.id, 'approved')}>
-                              <ShieldCheck className="mr-2 h-4 w-4 text-green-500" />Approve
+              ) : filteredAndSorted.length > 0 ? (
+                filteredAndSorted.map(user => (
+                  <TableRow key={user.user_id}>
+                    <TableCell className="font-medium">{user.username}</TableCell>
+                    <TableCell>{user.email}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">
+                        {user.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={cn('text-white', getStatusColor(user.status))}>
+                        {user.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {user.dept_id || 'N/A'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" disabled={isUpdating}>
+                            {isUpdating ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <MoreVertical className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {user.status === 'pending' && (
+                            <>
+                              <DropdownMenuItem
+                                onSelect={() => handleStatusChange(user.user_id, 'approved')}
+                                disabled={isUpdating}
+                              >
+                                <ShieldCheck className="mr-2 h-4 w-4 text-green-500" />
+                                Approve
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => handleStatusChange(user.user_id, 'rejected')}
+                                disabled={isUpdating}
+                              >
+                                <ShieldX className="mr-2 h-4 w-4 text-red-500" />
+                                Reject
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {user.status === 'approved' && (
+                            <DropdownMenuItem
+                              onSelect={() => handleStatusChange(user.user_id, 'suspended')}
+                              disabled={isUpdating}
+                            >
+                              <UserX className="mr-2 h-4 w-4 text-red-500" />
+                              Suspend
                             </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => handleStatusChange(user.id, 'rejected')}>
-                              <ShieldX className="mr-2 h-4 w-4 text-red-500" />Reject
+                          )}
+                          {(user.status === 'rejected' || user.status === 'suspended') && (
+                            <DropdownMenuItem
+                              onSelect={() => handleStatusChange(user.user_id, 'approved')}
+                              disabled={isUpdating}
+                            >
+                              <UserCheck className="mr-2 h-4 w-4 text-green-500" />
+                              Reinstate
                             </DropdownMenuItem>
-                          </>
-                        )}
-                        {user.status === 'approved' && (
-                          <DropdownMenuItem onSelect={() => handleStatusChange(user.id, 'suspended')}>
-                            <UserX className="mr-2 h-4 w-4 text-red-500" />Suspend
-                          </DropdownMenuItem>
-                        )}
-                        {(user.status === 'rejected' || user.status === 'suspended') && (
-                          <DropdownMenuItem onSelect={() => handleStatusChange(user.id, 'approved')}>
-                            <UserCheck className="mr-2 h-4 w-4 text-green-500" />Reinstate
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={6} className="h-24 text-center">
+                    No users found
                   </TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
         </CardContent>

@@ -324,13 +324,13 @@ export default function ProfilePage() {
                 {isEditing ? (
                   <div className="space-y-1">
                     <Label htmlFor="name" className="text-sm font-semibold text-muted-foreground px-1">
-                      Full Name
+                      Enter New Nickname
                     </Label>
                     <Input
                       id="name"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="text-3xl font-headline h-auto p-1 border-0 rounded-none focus-visible:ring-0"
+                      className="text-3xl font-headline p-5 border-[2px] border-blue-400 rounded-lg focus-visible:ring-0 bg-slate-800 "
                     />
                   </div>
                 ) : (
