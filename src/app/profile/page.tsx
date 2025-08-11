@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, ChangeEvent, useEffect } from 'react';
-import Image from 'next/image';
 import { useAuth } from '@/hooks/use-auth';
 import { DashboardLayout } from '@/components/dashboard-layout';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -19,14 +18,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Upload, Loader2, X } from 'lucide-react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
-const hospitalDepartments = [
-  "Nursing", "Radiology", "Cardiology", "Oncology", "Neurology",
-  "Pediatrics", "Surgery", "Emergency", "Pharmacy", "Laboratory",
-  "Physiotherapy", "IT", "Operations", "Marketing", "Sales", "HR", "Others"
-];
-
 export default function ProfilePage() {
-  const { user, updateUser } = useAuth();
+  const { user, setUser } = useAuth();
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -35,7 +28,6 @@ export default function ProfilePage() {
 
   // State for editable fields
   const [name, setName] = useState(user?.username || '');
-  const [selectedDepartment, setSelectedDepartment] = useState(user?.dept_id || '');
   const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -69,14 +61,13 @@ export default function ProfilePage() {
       const { error } = await supabase
         .from('users')
         .update({
-          username: name,
-          dept_id: selectedDepartment
+          username: name
         })
         .eq('user_id', user.user_id);
 
       if (error) throw error;
 
-      updateUser({ ...user, username: name, dept_id: selectedDepartment });
+      setUser({ ...user, username: name });
       setIsEditing(false);
       toast({
         title: "Profile Updated",
@@ -100,7 +91,7 @@ export default function ProfilePage() {
       toast({
         variant: 'destructive',
         title: 'Invalid File',
-        description: 'Please select an image file (JPEG, PNG, .GIF, etc.)',
+        description: 'Please select an image file (JPEG, PNG, etc.)',
       });
       return;
     }
@@ -162,14 +153,14 @@ export default function ProfilePage() {
       if (updateError) throw updateError;
 
       // Update local state
-      updateUser({ ...user, pfp_url: publicUrl });
+      setUser({ ...user, pfp_url: publicUrl });
       setSelectedFile(null);
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
 
       toast({
         title: "Avatar Updated",
-        description: "Your profile picture has been changed successfully. Please reload page to see changes"
+        description: "Your profile picture has been changed successfully."
       });
       setIsAvatarDialogOpen(false);
     } catch (error: any) {
@@ -185,7 +176,6 @@ export default function ProfilePage() {
 
   const handleCancel = () => {
     setName(user.username);
-    setSelectedDepartment(user.dept_id);
     setIsEditing(false);
   };
 
@@ -211,12 +201,19 @@ export default function ProfilePage() {
           <CardHeader>
             <div className="flex flex-col items-center space-y-4 md:flex-row md:space-y-0 md:space-x-6">
               <div className="relative group">
-                <Avatar className="h-24 w-24 border-4 border-primary group-hover:opacity-80 transition-opacity">
-                  <AvatarImage src={user.pfp_url} alt={user.username} />
-                  <AvatarFallback className="bg-muted text-muted-foreground text-3xl">
-                    {getInitials(user.username)}
-                  </AvatarFallback>
-                </Avatar>
+                {/* Updated Avatar container with proper aspect ratio */}
+                <div className="h-24 w-24 rounded-full border-4 border-primary overflow-hidden">
+                  <img
+                    src={user.pfp_url}
+                    alt={user.username}
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      // Fallback to initials if image fails to load
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'><rect width='96' height='96' fill='%23e5e7eb'/><text x='50%' y='50%' font-size='36' fill='%236b7280' text-anchor='middle' dominant-baseline='middle'>${getInitials(user.username)}</text></svg>`;
+                    }}
+                  />
+                </div>
                 <Dialog open={isAvatarDialogOpen} onOpenChange={setIsAvatarDialogOpen}>
                   <DialogTrigger asChild>
                     <Button
@@ -236,13 +233,25 @@ export default function ProfilePage() {
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                       <div className="flex flex-col items-center gap-4">
-                        <div className="relative">
-                          <Avatar className="h-32 w-32 border-4 border-primary">
-                            <AvatarImage src={previewUrl || user.pfp_url} />
-                            <AvatarFallback className="bg-muted text-muted-foreground text-4xl">
-                              {getInitials(user.username)}
-                            </AvatarFallback>
-                          </Avatar>
+                        {/* Updated preview container */}
+                        <div className="relative h-32 w-32 rounded-full border-4 border-primary overflow-hidden">
+                          {previewUrl ? (
+                            <img
+                              src={previewUrl}
+                              alt="Preview"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <img
+                              src={user.pfp_url}
+                              alt={user.username}
+                              className="h-full w-full object-cover"
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='128' height='128' viewBox='0 0 128 128'><rect width='128' height='128' fill='%23e5e7eb'/><text x='50%' y='50%' font-size='48' fill='%236b7280' text-anchor='middle' dominant-baseline='middle'>${getInitials(user.username)}</text></svg>`;
+                              }}
+                            />
+                          )}
                           {previewUrl && (
                             <Button
                               size="icon"
@@ -345,31 +354,23 @@ export default function ProfilePage() {
                   </Badge>
                 </span>
               </div>
-              <div className="space-y-1">
-                <Label className="font-semibold text-muted-foreground">Department</Label>
-                {isEditing ? (
-                  <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a department" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {hospitalDepartments.map(dept => (
-                        <SelectItem key={dept} value={dept}>{dept}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <p className="">{user.dept_id}</p>
-                )}
-              </div>
+
               <div className="space-y-1">
                 <p className="font-semibold text-muted-foreground">Account Created</p>
                 <p className="">{user.created_at ? format(parseISO(user.created_at), "PPP") : 'N/A'}</p>
               </div>
+
               <div className="space-y-1 col-span-1 md:col-span-2">
                 <p className="font-semibold text-muted-foreground">User ID</p>
                 <p className="text-xs font-mono text-muted-foreground bg-secondary p-2 rounded-md">
                   {user.user_id}
+                </p>
+              </div>
+
+              <div className="space-y-1 col-span-1 md:col-span-2">
+                <p className="font-semibold text-muted-foreground">Department ID</p>
+                <p className="text-xs font-mono text-muted-foreground bg-secondary p-2 rounded-md">
+                  {user.dept_id}
                 </p>
               </div>
             </div>
@@ -390,8 +391,16 @@ export default function ProfilePage() {
               </Button>
             )}
           </CardFooter>
+
+          <div className="p-8">
+            <p className="font-semibold text-muted-foreground">For more info & assistance, please contact the Administrators :)</p>
+          </div>
+
         </Card>
       </div>
+
+
+
     </DashboardLayout>
   );
 }
