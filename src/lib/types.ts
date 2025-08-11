@@ -29,15 +29,19 @@ export interface Room {
   updated_at: string;
 }
 
-export type BookingStatus = "confirmed" | "cancelled";
+export type BookingStatus = "confirmed" | "cancelled" | "rescheduled";
 
 export interface Booking {
-  booking_id: string;
+  bookings_id: string;
   room_id: string;
   id: string; // suppoesd to be user_id, didnt change cuz already integrated oops
   date: string; // YYYY-MM-DD format
-  startTime: string; // HH:mm format
-  endTime: string; // HH:mm format
-  title: string;
+  booked_at: string;
+  start_time: string; // HH:mm format
+  end_time: string; // HH:mm format
+  is_active: boolean;
   status: BookingStatus;
+  updated_at: string;
+  title: string;
+
 }
