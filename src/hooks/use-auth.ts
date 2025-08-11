@@ -14,7 +14,7 @@ export const useAuth = () => {
     throw new Error("useAuth must be used within an AuthProvider");
   }
 
-  const { user, setUser, isLoading, login, signup } = context;
+  const { user, setUser, isLoading, login, logout, signup } = context;
 
-  return { user, setUser, isLoading, login, signup };
+  return { user, setUser, isLoading, login, logout, signup };
 };
