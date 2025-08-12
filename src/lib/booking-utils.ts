@@ -14,47 +14,46 @@ export const timeSlots = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", 
  * @returns A boolean indicating if the slot is booked.
  */
 export const isSlotBooked = (
-    startTime: string,
-    roomId: string,
-    date: Date,
-    allBookings: Booking[],
-    duration: number = 1,
-    excludedBookingId?: string
+  startTime: string,
+  roomId: string,
+  date: Date,
+  allBookings: Booking[],
+  duration: number = 1,
+  excludedBookingId?: string
 ): boolean => {
-    if (!startTime) return true;
+  if (!startTime) return true;
 
-    const proposedStartTime = parseISO(`${formatDate(date)}T${startTime}`);
-    const proposedEndTime = addHours(proposedStartTime, duration);
+  const proposedStartTime = parseISO(`${formatDate(date)}T${startTime}`);
+  const proposedEndTime = addHours(proposedStartTime, duration);
 
-    const lastSlotTime = parseISO(`${formatDate(date)}T${timeSlots[timeSlots.length - 1]}`);
-    const bookingDeadline = addHours(lastSlotTime, 1);
-    if (proposedEndTime > bookingDeadline) {
-        return true;
+  const lastSlotTime = parseISO(`${formatDate(date)}T${timeSlots[timeSlots.length - 1]}`);
+  const bookingDeadline = addHours(lastSlotTime, 1);
+  if (proposedEndTime > bookingDeadline) {
+    return true;
+  }
+
+  const proposedInterval = { start: proposedStartTime, end: proposedEndTime };
+
+  const conflictingBookings = allBookings.filter(booking =>
+    booking.user_id !== excludedBookingId &&
+    booking.room_id === roomId &&
+    booking.status !== 'cancelled'
+  );
+
+  for (const booking of conflictingBookings) {
+    const existingStartTime = parseISO(`${booking.date}T${booking.start_time}`);
+    const existingEndTime = parseISO(`${booking.date}T${booking.end_time}`);
+    const existingInterval = { start: existingStartTime, end: existingEndTime };
+
+    if (areIntervalsOverlapping(proposedInterval, existingInterval, { inclusive: false })) {
+      return true;
     }
+  }
 
-    const proposedInterval = { start: proposedStartTime, end: proposedEndTime };
-
-    const conflictingBookings = allBookings.filter(booking => 
-        booking.id !== excludedBookingId &&
-        booking.roomId === roomId &&
-        isSameDay(parseISO(booking.date), date) &&
-        booking.status !== 'cancelled'
-    );
-
-    for (const booking of conflictingBookings) {
-        const existingStartTime = parseISO(`${booking.date}T${booking.startTime}`);
-        const existingEndTime = parseISO(`${booking.date}T${booking.endTime}`);
-        const existingInterval = { start: existingStartTime, end: existingEndTime };
-
-        if (areIntervalsOverlapping(proposedInterval, existingInterval, { inclusive: false })) {
-            return true;
-        }
-    }
-
-    return false;
+  return false;
 };
 
 // Helper to format date consistently
 const formatDate = (date: Date) => {
-    return formatDateFns(date, 'yyyy-MM-dd');
+  return formatDateFns(date, 'yyyy-MM-dd');
 };

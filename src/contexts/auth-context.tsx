@@ -68,20 +68,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     restoreSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user?.id) {
-        // Update user data when auth state changes
-        supabase
+        const { data: dbUser } = await supabase
           .from("users")
           .select("*")
           .eq("user_id", session.user.id)
-          .single()
-          .then(({ data: dbUser }) => {
-            if (dbUser) setUser(dbUser);
-          });
+          .single();
+        if (dbUser) setUser(dbUser);
       } else {
         setUser(null);
       }
+      setIsLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -233,7 +231,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const { error } = await supabase
         .from("users")
         .update(updatedUser)
-        .eq("user_id", updatedUser.id);
+        .eq("user_id", updatedUser.user_id);
 
       if (!error) {
         setUser(updatedUser);
