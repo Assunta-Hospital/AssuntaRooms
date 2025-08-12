@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useMemo, useEffect, useState } from 'react';
@@ -7,8 +6,9 @@ import { BarChart as BarChartIcon, PieChart as PieChartIcon, Clock, Users, Build
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, PieChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Pie, Cell } from 'recharts';
 import { DashboardLayout } from "@/components/dashboard-layout";
-import type { Booking, Room, User } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { createServerClient } from '@/utils/supabase/server';
+import type { Booking, Room, User } from '@/lib/types';
 
 const bookingFrequencyDataTemplate = [
   { day: "Mon", bookings: 0 },
@@ -25,15 +25,52 @@ export default function AdminDashboardPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Helper function to get department name from ID
+  const getDepartmentName = (deptId: string): string | null => {
+    // In a real implementation, you might want to fetch departments or have them in state
+    // For now, we'll use a static mapping based on your schema
+    const departmentMap: Record<string, string> = {
+      // Add your department IDs and names here if you have them
+    };
+    return departmentMap[deptId] || null;
+  };
 
   useEffect(() => {
-    // Simulate fetching data
-    setTimeout(() => {
-      setBookings(mockBookings);
-      setUsers(mockUsers);
-      setRooms(mockRooms);
-      setIsLoading(false);
-    }, 500);
+    const supabase = createServerClient();
+
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+
+        // Fetch all data in parallel
+        const [
+          { data: bookingsData, error: bookingsError },
+          { data: usersData, error: usersError },
+          { data: roomsData, error: roomsError }
+        ] = await Promise.all([
+          supabase.from('bookings').select('*'),
+          supabase.from('users').select('*'),
+          supabase.from('rooms').select('*')
+        ]);
+
+        if (bookingsError) throw bookingsError;
+        if (usersError) throw usersError;
+        if (roomsError) throw roomsError;
+
+        setBookings(bookingsData || []);
+        setUsers(usersData || []);
+        setRooms(roomsData || []);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError('Failed to load dashboard data');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
   }, []);
 
   const {
@@ -46,13 +83,21 @@ export default function AdminDashboardPage() {
     chartConfig
   } = useMemo(() => {
     if (!bookings.length || !users.length || !rooms.length) {
-      return { totalBookings: 0, mostPopularRoomName: 'N/A', mostPopularRoomPercentage: '0', bookingFrequencyData: bookingFrequencyDataTemplate, roomPopularityData: [], departmentBookingData: [], chartConfig: {} };
+      return {
+        totalBookings: 0,
+        mostPopularRoomName: 'N/A',
+        mostPopularRoomPercentage: '0',
+        bookingFrequencyData: bookingFrequencyDataTemplate,
+        roomPopularityData: [],
+        departmentBookingData: [],
+        chartConfig: {}
+      };
     }
 
     // Booking Frequency
     const freqData = [...bookingFrequencyDataTemplate];
     bookings.forEach(booking => {
-      const dayIndex = new Date(booking.date).getDay(); // Sunday = 0
+      const dayIndex = new Date(booking.booked_at).getDay(); // Sunday = 0
       const adjustedIndex = (dayIndex === 0) ? 6 : dayIndex - 1; // Mon = 0, Sun = 6
       freqData[adjustedIndex].bookings++;
     });
@@ -60,7 +105,7 @@ export default function AdminDashboardPage() {
     // Room Popularity
     const roomCounts: { [key: string]: number } = {};
     bookings.forEach(booking => {
-      roomCounts[booking.roomId] = (roomCounts[booking.roomId] || 0) + 1;
+      roomCounts[booking.room_id] = (roomCounts[booking.room_id] || 0) + 1;
     });
     const popData = Object.entries(roomCounts).map(([roomId, value], index) => {
       const room = rooms.find(r => r.room_id === roomId);
@@ -74,14 +119,30 @@ export default function AdminDashboardPage() {
     // Department Bookings
     const departmentCounts: { [key: string]: number } = {};
     bookings.forEach(booking => {
-      const user = users.find(u => u.id === booking.userId);
-      if (user && user.department) {
-        departmentCounts[user.department] = (departmentCounts[user.department] || 0) + 1;
+      const user = users.find(u => u.user_id === booking.user_id);
+      if (user && user.dept_id) {
+        const departmentName = getDepartmentName(user.dept_id);
+        if (departmentName) {
+          departmentCounts[departmentName] = (departmentCounts[departmentName] || 0) + 1;
+        }
       }
     });
-    const deptColors: { [key: string]: string } = { 'IT': "hsl(var(--chart-1))", 'Operations': "hsl(var(--chart-2))", 'Marketing': "hsl(var(--chart-3))", 'Sales': "hsl(var(--chart-4))", 'HR': "hsl(var(--chart-5))" };
-    const deptData = Object.entries(departmentCounts).map(([name, value], index) => ({
-      name, value, color: deptColors[name] || `hsl(var(--chart-${(index % 5) + 1}))`,
+
+    const deptColors: { [key: string]: string } = {
+      'IT': "hsl(var(--chart-1))",
+      'Operations': "hsl(var(--chart-2))",
+      'Marketing': "hsl(var(--chart-3))",
+      'Sales': "hsl(var(--chart-4))",
+      'HR': "hsl(var(--chart-5))",
+      'Nursing': "hsl(var(--chart-6))",
+      'Radiology': "hsl(var(--chart-7))",
+      'Cardiology': "hsl(var(--chart-8))"
+    };
+
+    const deptData = Object.entries(departmentCounts).map(([name, value]) => ({
+      name,
+      value,
+      color: deptColors[name] || `hsl(var(--chart-${Math.floor(Math.random() * 10) + 1}))`,
     }));
 
     // Chart Config
@@ -103,6 +164,36 @@ export default function AdminDashboardPage() {
     };
 
   }, [bookings, users, rooms]);
+
+  // Calculate average booking duration
+  const calculateAverageDuration = () => {
+    if (!bookings.length) return '0 hours';
+
+    let totalMinutes = 0;
+    bookings.forEach(booking => {
+      const start = new Date(`${booking.date}T${booking.start_time}`);
+      const end = new Date(`${booking.date}T${booking.end_time}`);
+      totalMinutes += (end.getTime() - start.getTime()) / (1000 * 60);
+    });
+
+    const avgMinutes = totalMinutes / bookings.length;
+    const hours = Math.floor(avgMinutes / 60);
+    const minutes = Math.round(avgMinutes % 60);
+
+    return hours > 0 ? `${hours}.${Math.floor(minutes / 6)} hours` : `${minutes} minutes`;
+  };
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="space-y-6">
+          <div className="text-red-500 p-4 border border-red-500 rounded-md">
+            {error}
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -126,7 +217,7 @@ export default function AdminDashboardPage() {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              {isLoading ? <Skeleton className="h-8 w-1/2" /> : <div className="text-2xl font-bold">1.2 hours</div>}
+              {isLoading ? <Skeleton className="h-8 w-1/2" /> : <div className="text-2xl font-bold">{calculateAverageDuration()}</div>}
               {isLoading ? <Skeleton className="h-4 w-1/3 mt-1" /> : <p className="text-xs text-muted-foreground">-5% from last month</p>}
             </CardContent>
           </Card>

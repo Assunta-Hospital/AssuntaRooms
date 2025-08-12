@@ -2,8 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { format, parseISO, addHours, startOfDay, isBefore } from "date-fns";
-import { Clock } from "lucide-react";
-
+import { Clock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
@@ -13,7 +12,6 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { useAuth } from "@/hooks/use-auth";
 import type { Booking, Room } from "@/lib/types";
@@ -21,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { isSlotBooked, timeSlots } from "@/lib/booking-utils";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
-
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 function TimeSlot({ time, onSelect, isSelected }: { time: string, onSelect: (time: string) => void, isSelected: boolean }) {
   return (
@@ -40,50 +38,103 @@ function TimeSlot({ time, onSelect, isSelected }: { time: string, onSelect: (tim
 export default function BookingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const supabase = createClientComponentClient();
 
-  const [allBookings, setAllBookings] = useState<Booking[]>(mockBookings);
+  const [allBookings, setAllBookings] = useState<Booking[]>([]);
   const [myBookings, setMyBookings] = useState<Booking[]>([]);
-  const [rooms, setRooms] = useState<Room[]>(mockRooms);
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
-
-  const [rescheduleDate, setRescheduleDate] = useState<Date | undefined>(new Date());
+  const [rescheduleDate, setRescheduleDate] = useState<Date | undefined>(undefined);
   const [rescheduleTime, setRescheduleTime] = useState<string | null>(null);
   const [duration, setDuration] = useState(1);
   const [durationMode, setDurationMode] = useState<'preset' | 'custom'>('preset');
   const [customDuration, setCustomDuration] = useState(1);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
-    setIsLoading(true);
-    if (user) {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const [
+          { data: bookingsData, error: bookingsError },
+          { data: roomsData, error: roomsError }
+        ] = await Promise.all([
+          supabase.from('bookings').select('*'),
+          supabase.from('rooms').select('*')
+        ]);
+
+        if (bookingsError || roomsError) {
+          throw bookingsError || roomsError;
+        }
+
+        setAllBookings(bookingsData || []);
+        setRooms(roomsData || []);
+      } catch (error) {
+        toast({
+          variant: "destructive",
+          title: "Error loading data",
+          description: error instanceof Error ? error.message : "Failed to fetch bookings"
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  useEffect(() => {
+    if (user && allBookings.length > 0) {
       const userBookings = allBookings
-        .filter(b => b.userId === user.id)
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        .filter(b => b.id === user.user_id)
+        .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
       setMyBookings(userBookings);
     }
-    // Simulate loading
-    setTimeout(() => setIsLoading(false), 300);
   }, [user, allBookings]);
 
   const handleCancelBooking = async (bookingId: string) => {
     if (!bookingId) return;
 
-    setAllBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'cancelled' } : b));
+    setIsUpdating(true);
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status: 'cancelled' })
+        .eq('bookings_id', bookingId);
 
-    toast({ title: "Booking Cancelled", description: "Your booking has been successfully cancelled." });
-    setSelectedBooking(null);
+      if (error) throw error;
+
+      setAllBookings(prev => prev.map(b =>
+        b.bookings_id === bookingId ? { ...b, status: 'cancelled' } : b
+      ));
+
+      toast({
+        title: "Booking Cancelled",
+        description: "Your booking has been successfully cancelled."
+      });
+      setSelectedBooking(null);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Cancellation Failed",
+        description: error instanceof Error ? error.message : "Failed to cancel booking"
+      });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const handleOpenReschedule = (booking: Booking) => {
-    const start = parseISO(`${booking.date}T${booking.startTime}`);
-    const end = parseISO(`${booking.date}T${booking.endTime}`);
+    const start = new Date(booking.start_time);
+    const end = new Date(booking.end_time);
     const bookingDuration = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
 
     setSelectedBooking(booking);
-    setRescheduleDate(parseISO(booking.date));
-    setRescheduleTime(booking.startTime);
+    setRescheduleDate(start);
+    setRescheduleTime(format(start, "HH:mm"));
 
     if (bookingDuration === 1 || bookingDuration === 2) {
       setDurationMode('preset');
@@ -99,29 +150,61 @@ export default function BookingsPage() {
 
   const handleConfirmReschedule = async () => {
     if (!selectedBooking || !rescheduleDate || !rescheduleTime) {
-      toast({ title: "Error", description: "Please select a date and time for reschedule.", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Please select a date and time for reschedule.",
+        variant: "destructive"
+      });
       return;
     }
 
-    const finalDuration = durationMode === 'preset' ? duration : customDuration;
-    const newEndTime = format(addHours(parseISO(`${format(rescheduleDate, "yyyy-MM-dd")}T${rescheduleTime}`), finalDuration), "HH:mm");
+    setIsUpdating(true);
+    try {
+      const finalDuration = durationMode === 'preset' ? duration : customDuration;
+      const newStart = new Date(rescheduleDate);
+      const [hours, minutes] = rescheduleTime.split(':').map(Number);
+      newStart.setHours(hours, minutes, 0, 0);
 
-    setAllBookings(prev => prev.map(b => b.id === selectedBooking.id ? {
-      ...b,
-      date: format(rescheduleDate, "yyyy-MM-dd"),
-      startTime: rescheduleTime,
-      endTime: newEndTime,
-      status: 'confirmed',
-    } : b));
+      const newEnd = new Date(newStart);
+      newEnd.setHours(newStart.getHours() + finalDuration);
 
-    toast({
-      title: "Booking Rescheduled",
-      description: `Your booking for "${selectedBooking.title}" has been successfully moved.`
-    });
+      const { error } = await supabase
+        .from('bookings')
+        .update({
+          start_time: newStart.toISOString(),
+          end_time: newEnd.toISOString(),
+          status: 'confirmed'
+        })
+        .eq('bookings_id', selectedBooking.bookings_id);
 
-    setIsRescheduleOpen(false);
-    setSelectedBooking(null);
-    setRescheduleTime(null);
+      if (error) throw error;
+
+      setAllBookings(prev => prev.map(b =>
+        b.bookings_id === selectedBooking.bookings_id ? {
+          ...b,
+          start_time: newStart.toISOString(),
+          end_time: newEnd.toISOString(),
+          status: 'confirmed'
+        } : b
+      ));
+
+      toast({
+        title: "Booking Rescheduled",
+        description: `Your booking has been successfully moved.`
+      });
+
+      setIsRescheduleOpen(false);
+      setSelectedBooking(null);
+      setRescheduleTime(null);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Reschedule Failed",
+        description: error instanceof Error ? error.message : "Failed to reschedule booking"
+      });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const getStatusBadge = (status: Booking['status']) => {
@@ -135,6 +218,7 @@ export default function BookingsPage() {
     }
   };
 
+  const getRoomById = (roomId: string) => rooms.find(r => r.room_id === roomId);
 
   return (
     <DashboardLayout>
@@ -171,13 +255,13 @@ export default function BookingsPage() {
                     </TableRow>
                   ))
                 ) : myBookings.length > 0 ? myBookings.map(booking => {
-                  const room = rooms.find(r => r.id === booking.roomId);
-                  const isPast = isBefore(parseISO(`${booking.date}T${booking.endTime}`), new Date());
+                  const room = getRoomById(booking.room_id);
+                  const isPast = isBefore(new Date(booking.end_time), new Date());
                   const canAct = !isPast && booking.status === 'confirmed';
 
                   return (
                     <TableRow
-                      key={booking.id}
+                      key={booking.bookings_id}
                       className={cn(
                         isPast && 'text-muted-foreground',
                         booking.status === 'cancelled' && 'line-through text-muted-foreground'
@@ -185,14 +269,16 @@ export default function BookingsPage() {
                     >
                       <TableCell>{room?.name}</TableCell>
                       <TableCell className="font-medium">{booking.title}</TableCell>
-                      <TableCell>{format(parseISO(booking.date), "PPP")}</TableCell>
-                      <TableCell>{booking.startTime} - {booking.endTime}</TableCell>
+                      <TableCell>{format(new Date(booking.start_time), "PPP")}</TableCell>
+                      <TableCell>
+                        {format(new Date(booking.start_time), "HH:mm")} - {format(new Date(booking.end_time), "HH:mm")}
+                      </TableCell>
                       <TableCell>{getStatusBadge(booking.status)}</TableCell>
                       <TableCell className="text-right space-x-2">
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={!canAct}
+                          disabled={!canAct || isUpdating}
                           onClick={() => handleOpenReschedule(booking)}
                         >
                           Reschedule
@@ -203,7 +289,7 @@ export default function BookingsPage() {
                             <Button
                               variant="destructive"
                               size="sm"
-                              disabled={!canAct}
+                              disabled={!canAct || isUpdating}
                             >
                               Cancel
                             </Button>
@@ -214,8 +300,18 @@ export default function BookingsPage() {
                             </DialogHeader>
                             <p>Are you sure you want to cancel the booking for "{booking.title}"?</p>
                             <DialogFooter>
-                              <DialogClose asChild><Button variant="outline">Back</Button></DialogClose>
-                              <DialogClose asChild><Button variant="destructive" onClick={() => handleCancelBooking(booking.id)}>Yes, Cancel</Button></DialogClose>
+                              <DialogClose asChild>
+                                <Button variant="outline">Back</Button>
+                              </DialogClose>
+                              <DialogClose asChild>
+                                <Button
+                                  variant="destructive"
+                                  onClick={() => handleCancelBooking(booking.bookings_id)}
+                                  disabled={isUpdating}
+                                >
+                                  {isUpdating ? 'Processing...' : 'Yes, Cancel'}
+                                </Button>
+                              </DialogClose>
                             </DialogFooter>
                           </DialogContent>
                         </Dialog>
@@ -246,11 +342,12 @@ export default function BookingsPage() {
                   mode="single"
                   selected={rescheduleDate}
                   onSelect={(date) => {
-                    setRescheduleDate(date);
+                    setRescheduleDate(date || undefined);
                     setRescheduleTime(null);
                   }}
                   className="rounded-md border"
                   disabled={(d) => d < startOfDay(new Date())}
+                  initialFocus
                 />
               </div>
             </div>
@@ -261,21 +358,39 @@ export default function BookingsPage() {
                   {timeSlots.map(slot => (
                     isSlotBooked(
                       slot,
-                      selectedBooking?.roomId || '',
+                      selectedBooking?.room_id || '',
                       rescheduleDate!,
                       allBookings,
                       1,
-                      selectedBooking?.id
+                      selectedBooking?.bookings_id
                     ) ?
-                      <Button key={slot} variant="outline" disabled className="w-full justify-start line-through text-base" size="lg"><Clock className="mr-2 h-4 w-4" />{slot}</Button>
-                      : <TimeSlot key={slot} time={slot} onSelect={setRescheduleTime} isSelected={rescheduleTime === slot} />
+                      <Button
+                        key={slot}
+                        variant="outline"
+                        disabled
+                        className="w-full justify-start line-through text-base"
+                        size="lg"
+                      >
+                        <Clock className="mr-2 h-4 w-4" />
+                        {slot}
+                      </Button>
+                      : <TimeSlot
+                        key={slot}
+                        time={slot}
+                        onSelect={setRescheduleTime}
+                        isSelected={rescheduleTime === slot}
+                      />
                   ))}
                 </div>
               </div>
               {rescheduleTime && (
                 <div className="space-y-4 pt-4">
                   <Label className="font-semibold text-lg">Booking Duration</Label>
-                  <RadioGroup value={durationMode} onValueChange={(v) => setDurationMode(v as "preset" | "custom")} className="flex space-x-4">
+                  <RadioGroup
+                    value={durationMode}
+                    onValueChange={(v) => setDurationMode(v as "preset" | "custom")}
+                    className="flex space-x-4"
+                  >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="preset" id="r-preset" onClick={() => setDuration(1)} />
                       <Label htmlFor="r-preset">Preset</Label>
@@ -287,12 +402,23 @@ export default function BookingsPage() {
                   </RadioGroup>
 
                   {durationMode === 'preset' && (
-                    <RadioGroup value={String(duration)} onValueChange={(v) => setDuration(Number(v))} className="flex space-x-2 pt-2">
+                    <RadioGroup
+                      value={String(duration)}
+                      onValueChange={(v) => setDuration(Number(v))}
+                      className="flex space-x-2 pt-2"
+                    >
                       <Button
                         type="button"
                         variant={duration === 1 ? 'default' : 'outline'}
                         onClick={() => setDuration(1)}
-                        disabled={isSlotBooked(rescheduleTime, selectedBooking!.roomId, rescheduleDate!, allBookings, 1, selectedBooking?.id)}
+                        disabled={isSlotBooked(
+                          rescheduleTime,
+                          selectedBooking!.room_id,
+                          rescheduleDate!,
+                          allBookings,
+                          1,
+                          selectedBooking?.bookings_id
+                        )}
                       >
                         1 Hour
                       </Button>
@@ -300,7 +426,14 @@ export default function BookingsPage() {
                         type="button"
                         variant={duration === 2 ? 'default' : 'outline'}
                         onClick={() => setDuration(2)}
-                        disabled={isSlotBooked(rescheduleTime, selectedBooking!.roomId, rescheduleDate!, allBookings, 2, selectedBooking?.id)}
+                        disabled={isSlotBooked(
+                          rescheduleTime,
+                          selectedBooking!.room_id,
+                          rescheduleDate!,
+                          allBookings,
+                          2,
+                          selectedBooking?.bookings_id
+                        )}
                       >
                         2 Hours
                       </Button>
@@ -320,9 +453,16 @@ export default function BookingsPage() {
                         value={[customDuration]}
                         onValueChange={(v) => setCustomDuration(v[0])}
                       />
-                      {isSlotBooked(rescheduleTime, selectedBooking!.roomId, rescheduleDate!, allBookings, customDuration, selectedBooking?.id) &&
-                        <p className="text-sm text-destructive">This duration conflicts with another booking.</p>
-                      }
+                      {isSlotBooked(
+                        rescheduleTime,
+                        selectedBooking!.room_id,
+                        rescheduleDate!,
+                        allBookings,
+                        customDuration,
+                        selectedBooking?.bookings_id
+                      ) && (
+                          <p className="text-sm text-destructive">This duration conflicts with another booking.</p>
+                        )}
                     </div>
                   )}
                 </div>
@@ -330,22 +470,53 @@ export default function BookingsPage() {
             </div>
           </div>
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+            <Button
+              variant="outline"
+              onClick={() => setIsRescheduleOpen(false)}
+              disabled={isUpdating}
+            >
+              Cancel
+            </Button>
             <Button
               onClick={handleConfirmReschedule}
               disabled={
                 !rescheduleTime ||
                 !rescheduleDate ||
-                (durationMode === 'custom' && isSlotBooked(rescheduleTime, selectedBooking!.roomId, rescheduleDate!, allBookings, customDuration, selectedBooking?.id)) ||
-                (durationMode === 'preset' && isSlotBooked(rescheduleTime, selectedBooking!.roomId, rescheduleDate!, allBookings, duration, selectedBooking?.id))
+                isUpdating ||
+                (durationMode === 'custom' &&
+                  isSlotBooked(
+                    rescheduleTime,
+                    selectedBooking!.room_id,
+                    rescheduleDate!,
+                    allBookings,
+                    customDuration,
+                    selectedBooking?.bookings_id
+                  )
+                ) ||
+                (durationMode === 'preset' &&
+                  isSlotBooked(
+                    rescheduleTime,
+                    selectedBooking!.room_id,
+                    rescheduleDate!,
+                    allBookings,
+                    duration,
+                    selectedBooking?.bookings_id
+                  )
+                )
               }
             >
-              Confirm Reschedule
+              {isUpdating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                'Confirm Reschedule'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
     </DashboardLayout>
   );
 }

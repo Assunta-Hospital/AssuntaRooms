@@ -20,7 +20,7 @@ export type Amenity = "Projector" | "Whiteboard" | "Video Conferencing" | "TV Sc
 export interface Room {
   room_id: string;
   name: string;
-  tags: [];
+  tags: string[];
   capacity: number;
   location: string;
   room_url: string;
@@ -34,7 +34,7 @@ export type BookingStatus = "confirmed" | "cancelled" | "rescheduled";
 export interface Booking {
   bookings_id: string;
   room_id: string;
-  id: string; // suppoesd to be user_id, didnt change cuz already integrated oops
+  user_id: string; // suppoesd to be user_id, didnt change cuz already integrated oops
   date: string; // YYYY-MM-DD format
   booked_at: string;
   start_time: string; // HH:mm format

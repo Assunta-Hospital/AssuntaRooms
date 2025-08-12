@@ -247,7 +247,7 @@ export default function ManageBookingsPage() {
                 ) : bookings.length > 0 ? (
                   bookings.map(booking => {
                     const room = getRoomById(booking.room_id);
-                    const bookingUser = getUserById(booking.id);
+                    const bookingUser = getUserById(booking.user_id);
                     const isPast = new Date(booking.end_time) < new Date() &&
                       !isSameDay(new Date(booking.end_time), new Date());
                     const canAct = !isPast && booking.status !== 'cancelled';

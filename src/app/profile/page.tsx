@@ -1,4 +1,4 @@
-"use client";
+"use client"
 
 import { useState, useRef, ChangeEvent, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
@@ -126,7 +126,7 @@ export default function ProfilePage() {
       // Generate unique filename
       const fileExt = selectedFile.name.split('.').pop();
       const fileName = `${user.user_id}-${Date.now()}.${fileExt}`;
-      const filePath = `public/${fileName}`;
+      const filePath = `${fileName}`;
 
       // Upload the file
       const { error: uploadError } = await supabase.storage

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import { add, format, parseISO } from "date-fns";
+import { format, parseISO, add } from "date-fns";
 import { Users, Clock, PlusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
-import type { Booking, Room } from "@/lib/types";
+import type { Booking, Room, BookingStatus } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +19,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Slider } from "@/components/ui/slider";
 import { isSlotBooked, timeSlots } from "@/lib/booking-utils";
 import { Skeleton } from "@/components/ui/skeleton";
-import { supabase } from "@/lib/supabase";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
 function TimeSlot({ time, onSelect, isSelected }: { time: string, onSelect: (time: string) => void, isSelected: boolean }) {
   return (
@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const supabase = createClientComponentClient();
 
   useEffect(() => {
     async function loadData() {
@@ -52,7 +53,7 @@ export default function DashboardPage() {
           { data: roomsData, error: roomsErr },
           { data: bookingsData, error: bookingsErr }
         ] = await Promise.all([
-          supabase.from("rooms").select("*"),
+          supabase.from("rooms").select("*").eq("is_active", true),
           supabase.from("bookings").select("*"),
         ]);
 
@@ -66,7 +67,7 @@ export default function DashboardPage() {
         toast({
           variant: "destructive",
           title: "Failed to load data",
-          description: "Unknown error occurred",
+          description: "Error loading rooms and bookings data",
         });
       } finally {
         setIsLoading(false);
@@ -74,36 +75,61 @@ export default function DashboardPage() {
     }
 
     loadData();
-  }, [toast]);
+  }, [supabase, toast]);
 
   const handleNewBooking = async (roomId: string, title: string, startTime: string, duration: number) => {
     if (!date || !user) return;
 
-    const newBooking: Booking = {
-      id: `booking-${new Date().getTime()}`,
-      roomId,
-      userId: user.id,
-      date: format(date, "yyyy-MM-dd"),
-      startTime,
-      endTime: format(add(parseISO(`${format(date, "yyyy-MM-dd")}T${startTime}`), { hours: duration }), "HH:mm"),
-      title,
-      status: 'confirmed',
-    };
-
     try {
-      // Insert into database
-      const { error } = await supabase.from("bookings").insert(newBooking);
+      const startDateTime = new Date(`${format(date, "yyyy-MM-dd")}T${startTime}`);
+      const endDateTime = new Date(startDateTime.getTime() + duration * 60 * 60 * 1000);
+
+      // Check for existing bookings that might conflict
+      const { data: conflictingBookings, error: conflictError } = await supabase
+        .from("bookings")
+        .select("*")
+        .eq("room_id", roomId)
+        .eq("date", format(date, "yyyy-MM-dd"))
+        .lte("start_time", format(endDateTime, "HH:mm"))
+        .gte("end_time", format(startDateTime, "HH:mm"));
+
+      if (conflictError) throw conflictError;
+      if (conflictingBookings && conflictingBookings.length > 0) {
+        throw new Error("Time slot is already booked");
+      }
+
+      // Create new booking
+      const { data: newBooking, error } = await supabase
+        .from("bookings")
+        .insert({
+          room_id: roomId,
+          user_id: user.user_id,
+          date: format(date, "yyyy-MM-dd"),
+          booked_at: new Date().toISOString(),
+          start_time: format(startDateTime, "HH:mm"),
+          end_time: format(endDateTime, "HH:mm"),
+          title,
+          status: "confirmed" as BookingStatus,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
 
       if (error) throw error;
 
       // Update local state
       setBookings(prev => [...prev, newBooking]);
-      toast({ title: "Booking Confirmed!", description: `${title} has been booked.` });
+      toast({
+        title: "Booking Confirmed!",
+        description: `${title} has been successfully booked.`
+      });
     } catch (error) {
       toast({
         variant: "destructive",
         title: "Booking Failed",
-        description: "Could not create booking",
+        description: error instanceof Error ? error.message : "Could not create booking",
       });
     }
   };
@@ -127,7 +153,7 @@ export default function DashboardPage() {
             ))
           ) : (
             <div className="md:col-span-2 lg:col-span-3 xl:col-span-4 text-center text-muted-foreground">
-              No meeting rooms have been added yet. An administrator can add venues from the 'Manage Venues' page.
+              No active meeting rooms available. Please check back later.
             </div>
           )}
         </div>
@@ -136,7 +162,6 @@ export default function DashboardPage() {
   );
 }
 
-// RoomCard component remains the same
 function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
   room: Room,
   date?: Date,
@@ -152,9 +177,9 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
   const [customDuration, setCustomDuration] = useState(1);
 
   const handleSubmit = () => {
-    if (selectedTime && bookingTitle) {
+    if (selectedTime && bookingTitle && date) {
       const finalDuration = durationMode === 'preset' ? duration : customDuration;
-      onNewBooking(room.id, bookingTitle, selectedTime, finalDuration);
+      onNewBooking(room.room_id, bookingTitle, selectedTime, finalDuration);
       setIsDialogOpen(false);
       setBookingTitle("");
       setSelectedTime(null);
@@ -168,25 +193,25 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
     <Card className="flex flex-col overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300">
       <CardHeader className="p-0 relative h-48">
         <Image
-          src={room.image}
+          src={room.room_url}
           alt={room.name}
-          layout="fill"
-          objectFit="cover"
+          fill
+          className="object-cover"
         />
       </CardHeader>
       <CardContent className="p-6 flex flex-col flex-grow">
         <h3 className="font-headline text-xl mb-2">{room.name}</h3>
         <div className="text-muted-foreground text-sm space-y-3 flex-grow">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            <span>Capacity: {room.capacity}</span>
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
             {room.tags?.map(tag => (
               <Badge key={tag} variant="secondary">
                 {tag}
               </Badge>
-            )) ?? (
-                <span className="text-muted-foreground text-sm">
-                  No amenities listed
-                </span>
-              )}
+            ))}
           </div>
         </div>
 
@@ -218,7 +243,7 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
                   <h3 className="font-semibold text-lg mb-2">Select Time Slot</h3>
                   <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                     {timeSlots.map(slot => (
-                      isSlotBooked(slot, room.id, date || new Date(), bookings, 1) ?
+                      isSlotBooked(slot, room.room_id, date || new Date(), bookings, 1) ?
                         <Button
                           key={slot}
                           variant="outline"
@@ -239,7 +264,7 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
                   </div>
                 </div>
 
-                {selectedTime && (
+                {selectedTime && date && (
                   <>
                     <div className="space-y-4 pt-4">
                       <Label className="font-semibold text-lg">Booking Duration</Label>
@@ -268,7 +293,7 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
                             type="button"
                             variant={duration === 1 ? 'default' : 'outline'}
                             onClick={() => setDuration(1)}
-                            disabled={isSlotBooked(selectedTime, room.id, date!, bookings, 1)}
+                            disabled={isSlotBooked(selectedTime, room.room_id, date, bookings, 1)}
                           >
                             1 Hour
                           </Button>
@@ -276,7 +301,7 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
                             type="button"
                             variant={duration === 2 ? 'default' : 'outline'}
                             onClick={() => setDuration(2)}
-                            disabled={isSlotBooked(selectedTime, room.id, date!, bookings, 2)}
+                            disabled={isSlotBooked(selectedTime, room.room_id, date, bookings, 2)}
                           >
                             2 Hours
                           </Button>
@@ -296,7 +321,7 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
                             value={[customDuration]}
                             onValueChange={(v) => setCustomDuration(v[0])}
                           />
-                          {isSlotBooked(selectedTime, room.id, date!, bookings, customDuration) && (
+                          {isSlotBooked(selectedTime, room.room_id, date, bookings, customDuration) && (
                             <p className="text-sm text-destructive">This duration conflicts with another booking.</p>
                           )}
                         </div>
@@ -324,7 +349,8 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
                 disabled={
                   !selectedTime ||
                   !bookingTitle ||
-                  (durationMode === 'custom' && isSlotBooked(selectedTime, room.id, date!, bookings, customDuration))
+                  !date ||
+                  (durationMode === 'custom' && isSlotBooked(selectedTime, room.room_id, date, bookings, customDuration))
                 }
               >
                 Confirm Booking
@@ -334,5 +360,5 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
         </Dialog>
       </CardContent>
     </Card>
-  )
+  );
 }
