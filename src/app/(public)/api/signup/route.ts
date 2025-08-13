@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServerClient } from "@/utils/supabase/server";
+import { createServerSupabaseClient } from "@/utils/supabase/server";
 
 export async function POST(req: Request) {
   const formData = await req.formData();
@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   const department = formData.get('department') as string;
   const avatarFile = formData.get('avatar') as File | null;
 
-  const supabase = createServerClient();
+  const supabase = await createServerSupabaseClient();
 
   try {
     // 1. Validate department exists

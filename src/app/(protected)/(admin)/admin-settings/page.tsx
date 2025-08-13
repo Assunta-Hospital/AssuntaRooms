@@ -9,7 +9,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLe
 import { BarChart, PieChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Pie, Cell } from 'recharts';
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Skeleton } from '@/components/ui/skeleton';
-import { createServerClient } from '@/utils/supabase/server';
+import { supabase } from '@/lib/supabase';
 import type { Booking, Room, User } from '@/lib/types';
 
 const bookingFrequencyDataTemplate = [
@@ -39,14 +39,12 @@ export default function AdminDashboardPage() {
     return departmentMap[deptId] || null;
   };
 
-  useEffect(() => {
-    const supabase = createServerClient();
 
+  useEffect(() => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
 
-        // Fetch all data in parallel
         const [
           { data: bookingsData, error: bookingsError },
           { data: usersData, error: usersError },
