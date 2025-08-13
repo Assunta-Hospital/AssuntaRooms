@@ -393,6 +393,7 @@ export default function ProfilePage() {
           </CardFooter>
 
           <div className="p-8">
+            <p className="font-semibold text-muted-foreground">If you are experiencing slowdowns, try refreshing the site!</p>
             <p className="font-semibold text-muted-foreground">For more info & assistance, please contact the Administrators :)</p>
           </div>
 

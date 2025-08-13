@@ -1,6 +1,6 @@
 import { Timestamp } from "next/dist/server/lib/cache-handlers/types";
 
-export type Role = "Admin" | "Manager" | "User";
+export type Role = "admin" | "manager" | "user"; //lowercase plz
 export type UserStatus = "approved" | "pending" | "rejected" | "suspended";
 export type Department = "Nursing" | "Radiology" | "Cardiology" | "Oncology" | "Neurology" | "Pediatrics" | "Surgery" | "Emergency" | "Pharmacy" | "Laboratory" | "Physiotherapy" | "IT" | "Operations" | "Marketing" | "Sales" | "HR" | "others";
 

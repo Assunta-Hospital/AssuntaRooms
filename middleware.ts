@@ -1,34 +1,66 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 
-export async function middleware(request: NextRequest) {
-  const response = NextResponse.next()
-  const supabase = createMiddlewareClient({ req: request, res: response })
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next();
 
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name) {
+          return req.cookies.get(name)?.value;
+        },
+        set(name, value, options) {
+          res.cookies.set({ name, value, ...options });
+        },
+        remove(name, options) {
+          res.cookies.set({ name, value: "", ...options });
+        },
+      },
+    }
+  );
+
+  // 1️⃣ Get session
   const {
     data: { session },
-  } = await supabase.auth.getSession()
+  } = await supabase.auth.getSession();
+  console.log("hi")
 
-  // Define protected paths
-  const protectedPaths = ['/dashboard', '/admin-settings', '/manage-users']
-  const isProtected = protectedPaths.some((path) =>
-    request.nextUrl.pathname.startsWith(path)
-  )
-
-  // Redirect to login if trying to access protected path without session
-  if (isProtected && !session) {
-    return NextResponse.redirect(new URL('/login', request.url))
+  if (!session) {
+    const redirectUrl = req.nextUrl.clone();
+    redirectUrl.pathname = "/login";
+    redirectUrl.searchParams.set("redirectedFrom", req.nextUrl.pathname);
+    return NextResponse.redirect(redirectUrl);
   }
 
-  // Redirect away from auth pages if already logged in
-  if (request.nextUrl.pathname.startsWith('/login') && session) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+  // 2️⃣ If it's an admin path, check role
+  if (req.nextUrl.pathname.startsWith("/admin")) {
+    const { data: userData, error } = await supabase
+      .from("users")
+      .select("role")
+      .eq("user_id", session.user.id)
+      .single();
+
+    if (error || userData?.role !== "admin") {
+      const redirectUrl = req.nextUrl.clone();
+      redirectUrl.pathname = "/unauthorized";
+      return NextResponse.redirect(redirectUrl);
+    }
   }
 
-  return response
+  return res;
 }
 
 export const config = {
-  matcher: ['/dashboard', '/admin-settings', '/manage-users', '/login'],
-}
+  matcher: [
+    "/dashboard/:path*",
+    "/manage-bookings/:path*",
+    "/manage-users/:path*",
+    "/manage-venues/:path*",
+    "/profile/:path*",
+    "/status/:path*",
+  ],
+};
