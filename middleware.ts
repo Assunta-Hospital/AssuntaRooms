@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  console.log("middleware running!")
   const response = NextResponse.next()
   const supabase = createMiddlewareClient({ req: request, res: response })
 

@@ -1,3 +1,5 @@
+// i think get get * from bookings where date within this month so no need stats table 
+
 "use client";
 
 import { useMemo, useEffect, useState } from 'react';

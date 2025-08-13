@@ -89,7 +89,7 @@ export default function BookingsPage() {
   useEffect(() => {
     if (user && allBookings.length > 0) {
       const userBookings = allBookings
-        .filter(b => b.id === user.user_id)
+        .filter(b => b.user_id === user.user_id)
         .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
       setMyBookings(userBookings);
     }
