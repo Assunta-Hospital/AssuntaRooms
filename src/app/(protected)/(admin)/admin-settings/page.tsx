@@ -1,10 +1,8 @@
-// i think get get * from bookings where date within this month so no need stats table 
-
 "use client";
 
 import { useMemo, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { BarChart as BarChartIcon, PieChart as PieChartIcon, Clock, Users, Building2 } from 'lucide-react';
+import { BarChart as BarChartIcon, PieChart as PieChartIcon, Clock, Users, Building2, Calendar } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { BarChart, PieChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Pie, Cell } from 'recharts';
 import { DashboardLayout } from "@/components/dashboard-layout";
@@ -31,14 +29,9 @@ export default function AdminDashboardPage() {
 
   // Helper function to get department name from ID
   const getDepartmentName = (deptId: string): string | null => {
-    // In a real implementation, you might want to fetch departments or have them in state
-    // For now, we'll use a static mapping based on your schema
-    const departmentMap: Record<string, string> = {
-      // Add your department IDs and names here if you have them
-    };
+    const departmentMap: Record<string, string> = {};
     return departmentMap[deptId] || null;
   };
-
 
   useEffect(() => {
     const fetchData = async () => {
@@ -80,7 +73,8 @@ export default function AdminDashboardPage() {
     bookingFrequencyData,
     roomPopularityData,
     departmentBookingData,
-    chartConfig
+    chartConfig,
+    activeUsersCount
   } = useMemo(() => {
     if (!bookings.length || !users.length || !rooms.length) {
       return {
@@ -90,15 +84,16 @@ export default function AdminDashboardPage() {
         bookingFrequencyData: bookingFrequencyDataTemplate,
         roomPopularityData: [],
         departmentBookingData: [],
-        chartConfig: {}
+        chartConfig: {},
+        activeUsersCount: 0
       };
     }
 
     // Booking Frequency
     const freqData = [...bookingFrequencyDataTemplate];
     bookings.forEach(booking => {
-      const dayIndex = new Date(booking.booked_at).getDay(); // Sunday = 0
-      const adjustedIndex = (dayIndex === 0) ? 6 : dayIndex - 1; // Mon = 0, Sun = 6
+      const dayIndex = new Date(booking.booked_at).getDay();
+      const adjustedIndex = (dayIndex === 0) ? 6 : dayIndex - 1;
       freqData[adjustedIndex].bookings++;
     });
 
@@ -118,12 +113,16 @@ export default function AdminDashboardPage() {
 
     // Department Bookings
     const departmentCounts: { [key: string]: number } = {};
+    const activeUsers = new Set<string>();
     bookings.forEach(booking => {
       const user = users.find(u => u.user_id === booking.user_id);
-      if (user && user.dept_id) {
-        const departmentName = getDepartmentName(user.dept_id);
-        if (departmentName) {
-          departmentCounts[departmentName] = (departmentCounts[departmentName] || 0) + 1;
+      if (user) {
+        activeUsers.add(user.user_id);
+        if (user.dept_id) {
+          const departmentName = getDepartmentName(user.dept_id);
+          if (departmentName) {
+            departmentCounts[departmentName] = (departmentCounts[departmentName] || 0) + 1;
+          }
         }
       }
     });
@@ -160,12 +159,12 @@ export default function AdminDashboardPage() {
       bookingFrequencyData: freqData,
       roomPopularityData: popData,
       departmentBookingData: deptData,
-      chartConfig: config
+      chartConfig: config,
+      activeUsersCount: activeUsers.size
     };
 
   }, [bookings, users, rooms]);
 
-  // Calculate average booking duration
   const calculateAverageDuration = () => {
     if (!bookings.length) return '0 hours';
 
@@ -198,74 +197,156 @@ export default function AdminDashboardPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <p className="text-muted-foreground -mt-4">An overview of meeting room usage and statistics.</p>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+            <p className="text-muted-foreground">An overview of meeting room usage and statistics.</p>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Calendar className="h-4 w-4" />
+            <span>This month</span>
+          </div>
+        </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {/* Top Cards - 4 columns */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Bookings</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              {isLoading ? <Skeleton className="h-8 w-1/2" /> : <div className="text-2xl font-bold">{totalBookings}</div>}
-              {isLoading ? <Skeleton className="h-4 w-1/3 mt-1" /> : <p className="text-xs text-muted-foreground">+20.1% from last month</p>}
+              {isLoading ? (
+                <>
+                  <Skeleton className="h-8 w-1/2" />
+                  <Skeleton className="h-4 w-1/3 mt-1" />
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{totalBookings}</div>
+                  <p className="text-xs text-muted-foreground">+20.1% from last month</p>
+                </>
+              )}
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg. Booking Duration</CardTitle>
+              <CardTitle className="text-sm font-medium">Active Users</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <>
+                  <Skeleton className="h-8 w-1/2" />
+                  <Skeleton className="h-4 w-1/3 mt-1" />
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{activeUsersCount}</div>
+                  <p className="text-xs text-muted-foreground">Unique users booking</p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Avg. Duration</CardTitle>
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              {isLoading ? <Skeleton className="h-8 w-1/2" /> : <div className="text-2xl font-bold">{calculateAverageDuration()}</div>}
-              {isLoading ? <Skeleton className="h-4 w-1/3 mt-1" /> : <p className="text-xs text-muted-foreground">-5% from last month</p>}
+              {isLoading ? (
+                <>
+                  <Skeleton className="h-8 w-1/2" />
+                  <Skeleton className="h-4 w-1/3 mt-1" />
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{calculateAverageDuration()}</div>
+                  <p className="text-xs text-muted-foreground">-5% from last month</p>
+                </>
+              )}
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Most Popular Room</CardTitle>
-              <PieChartIcon className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Popular Room</CardTitle>
+              <Building2 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              {isLoading ? <Skeleton className="h-8 w-1/2" /> : <div className="text-2xl font-bold">{mostPopularRoomName}</div>}
-              {isLoading ? <Skeleton className="h-4 w-1/3 mt-1" /> : <p className="text-xs text-muted-foreground">{mostPopularRoomPercentage}% of all bookings</p>}
+              {isLoading ? (
+                <>
+                  <Skeleton className="h-8 w-1/2" />
+                  <Skeleton className="h-4 w-1/3 mt-1" />
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{mostPopularRoomName}</div>
+                  <p className="text-xs text-muted-foreground">{mostPopularRoomPercentage}% of all bookings</p>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-3">
-          <Card>
+        {/* Bottom Charts - 2 columns */}
+        <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
+          <Card className="h-full">
             <CardHeader>
-              <CardTitle className="font-headline">Booking Frequency</CardTitle>
-              <CardDescription>Number of bookings per day of the week.</CardDescription>
+              <CardTitle className="font-headline">Weekly Bookings</CardTitle>
+              <CardDescription>Number of bookings per day of the week</CardDescription>
             </CardHeader>
-            <CardContent>
-              {isLoading ? <Skeleton className="h-[250px] w-full" /> : (
-                <ChartContainer config={chartConfig} className="h-[250px] w-full">
+            <CardContent className="h-[300px]">
+              {isLoading ? (
+                <Skeleton className="h-full w-full" />
+              ) : (
+                <ChartContainer config={chartConfig} className="h-full w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart accessibilityLayer data={bookingFrequencyData}>
-                      <CartesianGrid vertical={false} />
-                      <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} />
-                      <YAxis />
-                      <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
-                      <Bar dataKey="bookings" fill="var(--color-bookings)" radius={8} />
+                      <CartesianGrid vertical={false} strokeDasharray="3 3" className="opacity-30" />
+                      <XAxis
+                        dataKey="day"
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={8}
+                        className="text-xs"
+                      />
+                      <YAxis className="text-xs" />
+                      <ChartTooltip
+                        cursor={{ fill: 'hsl(var(--muted))', opacity: 0.3 }}
+                        content={<ChartTooltipContent indicator="dot" />}
+                      />
+                      <Bar
+                        dataKey="bookings"
+                        fill="hsl(var(--primary))"
+                        radius={[4, 4, 0, 0]}
+                        barSize={32}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </ChartContainer>
               )}
             </CardContent>
           </Card>
-          <Card>
+
+          <Card className="h-full">
             <CardHeader>
               <CardTitle className="font-headline">Room Popularity</CardTitle>
-              <CardDescription>Distribution of bookings across available rooms.</CardDescription>
+              <CardDescription>Distribution of bookings across rooms</CardDescription>
             </CardHeader>
-            <CardContent className="flex items-center justify-center">
-              {isLoading ? <Skeleton className="h-[250px] w-full" /> : (
-                <ChartContainer config={chartConfig} className="h-[250px] w-full">
+            <CardContent className="h-[300px]">
+              {isLoading ? (
+                <Skeleton className="h-full w-full" />
+              ) : (
+                <ChartContainer config={chartConfig} className="h-full w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart accessibilityLayer>
-                      <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
+                      <ChartTooltip
+                        cursor={false}
+                        content={<ChartTooltipContent indicator="dot" />}
+                      />
                       <Pie
                         data={roomPopularityData}
                         dataKey="value"
@@ -274,47 +355,18 @@ export default function AdminDashboardPage() {
                         cy="50%"
                         outerRadius={100}
                         innerRadius={60}
-                        paddingAngle={5}
+                        paddingAngle={2}
                         labelLine={false}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                       >
                         {roomPopularityData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <ChartLegend content={<ChartLegendContent nameKey="name" />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </ChartContainer>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-headline">Bookings by Department</CardTitle>
-              <CardDescription>Distribution of bookings across departments.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex items-center justify-center">
-              {isLoading ? <Skeleton className="h-[250px] w-full" /> : (
-                <ChartContainer config={chartConfig} className="h-[250px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart accessibilityLayer>
-                      <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
-                      <Pie
-                        data={departmentBookingData}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={100}
-                        innerRadius={60}
-                        paddingAngle={5}
-                        labelLine={false}
-                      >
-                        {departmentBookingData.map((entry, index) => (
-                          <Cell key={`cell-dept-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <ChartLegend content={<ChartLegendContent nameKey="name" />} />
+                      <ChartLegend
+                        content={<ChartLegendContent nameKey="name" />}
+                        wrapperStyle={{ fontSize: '12px' }}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </ChartContainer>

@@ -20,10 +20,6 @@ CREATE TABLE public.users (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- (notsure if needed yet might remove) Add user_id to department AFTER tables exist 
-ALTER TABLE public.department
-ADD COLUMN user_id UUID REFERENCES public.users(user_id) ON DELETE SET NULL;
-
 -- ROOMS TABLE
 CREATE TABLE public.rooms (
     room_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
