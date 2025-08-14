@@ -5,14 +5,14 @@ export type UserStatus = "approved" | "pending" | "rejected" | "suspended";
 export type Department = "Nursing" | "Radiology" | "Cardiology" | "Oncology" | "Neurology" | "Pediatrics" | "Surgery" | "Emergency" | "Pharmacy" | "Laboratory" | "Physiotherapy" | "IT" | "Operations" | "Marketing" | "Sales" | "HR" | "others";
 
 export interface User {
-  user_id: string;     // Changed from id to user_id
+  user_id: string;
   username: string;
   email: string;
-  dept_id: string;     // Changed from department to dept_id
-  pfp_url?: string;    // Changed from avatar to pfp_url
+  dept_id: string;
+  pfp_url?: string;
   role: Role;
   status: UserStatus;
-  created_at: string;  // Changed from createdAt to created_at
+  created_at: string;
 }
 
 export type Amenity = "Projector" | "Whiteboard" | "Video Conferencing" | "TV Screen" | "Coffee Machine" | "LAN Cable" | "HDMI Cable";

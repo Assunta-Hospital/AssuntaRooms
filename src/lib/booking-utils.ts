@@ -1,4 +1,11 @@
-import { isSameDay, parseISO, addHours, areIntervalsOverlapping, format as formatDateFns } from "date-fns";
+import {
+  isSameDay,
+  parseISO,
+  addHours,
+  areIntervalsOverlapping,
+  format as formatDateFns,
+  startOfDay
+} from "date-fns";
 import type { Booking } from "@/lib/types";
 
 export const timeSlots = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
@@ -16,44 +23,48 @@ export const timeSlots = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", 
 export const isSlotBooked = (
   startTime: string,
   roomId: string,
-  date: Date,
+  date: Date | undefined,
   allBookings: Booking[],
   duration: number = 1,
   excludedBookingId?: string
 ): boolean => {
-  if (!startTime) return true;
+  // Return true (booked) if any required parameter is missing
+  if (!startTime || !roomId || !date) return true;
 
-  const proposedStartTime = parseISO(`${formatDate(date)}T${startTime}`);
-  const proposedEndTime = addHours(proposedStartTime, duration);
+  try {
+    const dateString = formatDate(date);
+    const proposedStartTime = new Date(`${dateString}T${startTime}:00`);
+    const proposedEndTime = addHours(proposedStartTime, duration);
 
-  const lastSlotTime = parseISO(`${formatDate(date)}T${timeSlots[timeSlots.length - 1]}`);
-  const bookingDeadline = addHours(lastSlotTime, 1);
-  if (proposedEndTime > bookingDeadline) {
-    return true;
-  }
-
-  const proposedInterval = { start: proposedStartTime, end: proposedEndTime };
-
-  const conflictingBookings = allBookings.filter(booking =>
-    booking.user_id !== excludedBookingId &&
-    booking.room_id === roomId &&
-    booking.status !== 'cancelled'
-  );
-
-  for (const booking of conflictingBookings) {
-    const existingStartTime = parseISO(`${booking.date}T${booking.start_time}`);
-    const existingEndTime = parseISO(`${booking.date}T${booking.end_time}`);
-    const existingInterval = { start: existingStartTime, end: existingEndTime };
-
-    if (areIntervalsOverlapping(proposedInterval, existingInterval, { inclusive: false })) {
+    // Check if the booking extends beyond available slots
+    const lastSlotTime = new Date(`${dateString}T${timeSlots[timeSlots.length - 1]}:00`);
+    const bookingDeadline = addHours(lastSlotTime, 1);
+    if (proposedEndTime > bookingDeadline) {
       return true;
     }
-  }
 
-  return false;
+    const proposedInterval = { start: proposedStartTime, end: proposedEndTime };
+
+    return allBookings.some(booking => {
+      // Skip if this is the booking we're excluding (for rescheduling)
+      if (booking.bookings_id === excludedBookingId) return false;
+      // Skip if not for this room or cancelled
+      if (booking.room_id !== roomId || booking.status === 'cancelled') return false;
+
+      const existingStartTime = new Date(booking.start_time);
+      const existingEndTime = new Date(booking.end_time);
+      const existingInterval = { start: existingStartTime, end: existingEndTime };
+
+      return areIntervalsOverlapping(proposedInterval, existingInterval, { inclusive: false });
+    });
+  } catch (error) {
+    console.error('Error in isSlotBooked:', error);
+    return true; // If there's an error, consider the slot booked to be safe
+  }
 };
 
 // Helper to format date consistently
-const formatDate = (date: Date) => {
-  return formatDateFns(date, 'yyyy-MM-dd');
+const formatDate = (date: Date): string => {
+  // Use startOfDay to normalize the date and prevent timezone issues
+  return formatDateFns(startOfDay(date), 'yyyy-MM-dd');
 };

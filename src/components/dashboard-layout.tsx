@@ -40,7 +40,6 @@ const menuItems: MenuItem[] = [
   { href: "/profile", label: "My Profile", icon: User, roles: ["admin", "manager", "user"] },
   { type: 'divider', roles: ["admin", "manager"] },
   { type: 'heading', label: 'Management', roles: ["admin", "manager"] },
-  { href: "/manage-bookings", label: "All Bookings", icon: BookMarked, roles: ["admin", "manager"] },
   { href: "/manage-venues", label: "Manage Venues", icon: Building, roles: ["admin", "manager"] },
   { href: "/manage-users", label: "User Management", icon: Users, roles: ["admin"] },
   { href: "/admin-settings", label: "Admin Dashboard", icon: Shield, roles: ["admin"] },

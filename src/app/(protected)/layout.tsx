@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { LoadingScreen } from "@/components/ui/LoadingScreen"; // adjust path if needed
 
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -14,7 +15,8 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     }
   }, [user, isLoading, router]);
 
-  if (isLoading || !user) return <div>Loading page...</div>;
+  // Show loading screen while checking auth
+  if (isLoading || !user) return <LoadingScreen isOpen={true} message="Checking access" />;
 
   return <>{children}</>;
 }
