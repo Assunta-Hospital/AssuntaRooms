@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { PlusCircle, Edit, Trash2, Users, Layers } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, Users, Layers, Upload } from 'lucide-react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 import { Button } from '@/components/ui/button';
@@ -29,35 +29,181 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Room } from '@/lib/types';
 
+// Schema with file validation
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
 const roomSchema = z.object({
   room_id: z.string().optional(),
   name: z.string().min(3, 'Name must be at least 3 characters'),
   capacity: z.coerce.number().min(1, 'Capacity must be at least 1'),
   location: z.string().min(1, 'Location is required'),
-  room_url: z.string().url('Please provide a valid URL').startsWith('https://', { message: 'URL must start with https://' }),
+  image_file: z
+    .any()
+    .refine(
+      (file) => !file || (file instanceof File && file.size <= MAX_FILE_SIZE),
+      'Max image size is 5MB'
+    )
+    .refine(
+      (file) => !file || (file instanceof File && file.type.startsWith('image/')),
+      'Only image files are supported'
+    )
+    .optional(),
   tags: z.array(z.string()).min(1, 'Select at least one amenity'),
   is_active: z.boolean().default(true),
 });
 
+
 type RoomFormData = z.infer<typeof roomSchema>;
 
-function RoomForm({ room, onSave, closeDialog }: { room?: Room; onSave: (data: RoomFormData, id?: string) => void; closeDialog: () => void }) {
-  const { register, handleSubmit, control, formState: { errors }, setValue, watch } = useForm<RoomFormData>({
+function ImageUpload({
+  value,
+  onChange,
+  disabled,
+  error,
+}: {
+  value: File | null;
+  onChange: (file: File | null) => void;
+  disabled?: boolean;
+  error?: string;
+}) {
+  const [preview, setPreview] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    if (value) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreview(reader.result as string);
+      };
+      reader.readAsDataURL(value);
+    } else {
+      setPreview(null);
+    }
+  }, [value]);
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!disabled) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    if (disabled) return;
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith('image/')) {
+        onChange(file);
+      }
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return;
+
+    const file = e.target.files?.[0];
+    if (file) {
+      onChange(file);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div
+        className={`border-2 border-dashed rounded-md p-4 ${isDragging ? 'border-primary bg-primary/10' : 'border-muted'
+          } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${error ? 'border-destructive' : ''
+          }`}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        <div className="flex flex-col items-center justify-center space-y-2">
+          {preview ? (
+            <>
+              <div className="relative w-full h-48">
+                <Image
+                  src={preview}
+                  alt="Preview"
+                  fill
+                  className="object-cover rounded-md"
+                />
+              </div>
+              {!disabled && (
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => onChange(null)}
+                >
+                  Remove Image
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
+              <Upload className="h-10 w-10 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                {disabled ? 'Image upload disabled' : 'Drag & drop an image here, or click to select'}
+              </p>
+              <Input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                id="image-upload"
+                onChange={handleFileChange}
+                disabled={disabled}
+              />
+              {!disabled && (
+                <Label
+                  htmlFor="image-upload"
+                  className="cursor-pointer text-sm font-medium text-primary"
+                >
+                  Select Image
+                </Label>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+function RoomForm({ room, onSave, closeDialog }: { room?: Room; onSave: (data: RoomFormData, id?: string) => Promise<void>; closeDialog: () => void }) {
+  const { register, handleSubmit, control, formState: { errors, isSubmitting }, setValue, watch } = useForm<RoomFormData>({
     resolver: zodResolver(roomSchema),
     defaultValues: room || {
       name: '',
       capacity: 1,
       location: '',
-      room_url: 'https://placehold.co/600x400.png',
+      image_file: null,
       tags: [],
       is_active: true
     },
   });
 
-  const imagePreview = watch('room_url');
+  const imageFile = watch('image_file');
+  const isEdit = !!room;
 
-  const onSubmit = (data: RoomFormData) => {
-    onSave(data, room?.room_id);
+  const onSubmit = async (data: RoomFormData) => {
+    await onSave(data, room?.room_id);
     closeDialog();
   };
 
@@ -66,35 +212,39 @@ function RoomForm({ room, onSave, closeDialog }: { room?: Room; onSave: (data: R
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="name">Room Name</Label>
-          <Input id="name" {...register('name')} />
+          <Input id="name" {...register('name')} disabled={isSubmitting} />
           {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
         </div>
         <div className="space-y-2">
           <Label htmlFor="capacity">Capacity</Label>
-          <Input id="capacity" type="number" {...register('capacity')} />
+          <Input id="capacity" type="number" {...register('capacity')} disabled={isSubmitting} />
           {errors.capacity && <p className="text-sm text-destructive">{errors.capacity.message}</p>}
         </div>
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="location">Location</Label>
-        <Input id="location" {...register('location')} />
+        <Input id="location" {...register('location')} disabled={isSubmitting} />
         {errors.location && <p className="text-sm text-destructive">{errors.location.message}</p>}
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="room_url">Image URL</Label>
-        <Input id="room_url" placeholder="https://placehold.co/600x400.png" {...register('room_url')} />
-        {imagePreview && (
-          <Image
-            src={imagePreview}
-            alt="Preview"
-            width={200}
-            height={100}
-            className="rounded-md mt-2 object-cover"
-          />
-        )}
-        {errors.room_url && <p className="text-sm text-destructive">{errors.room_url.message}</p>}
+        <Label>Room Image {!isEdit && <span className="text-destructive">*</span>}</Label>
+        <Controller
+          name="image_file"
+          control={control}
+          render={({ field, fieldState }) => (
+            <ImageUpload
+              value={field.value}
+              onChange={(file) => {
+                field.onChange(file);
+                setValue('image_file', file);
+              }}
+              disabled={isSubmitting}
+              error={fieldState.error?.message}
+            />
+          )}
+        />
       </div>
 
       <div className="space-y-2">
@@ -115,6 +265,7 @@ function RoomForm({ room, onSave, closeDialog }: { room?: Room; onSave: (data: R
                         : field.value.filter((a) => a !== amenity);
                       field.onChange(newValue);
                     }}
+                    disabled={isSubmitting}
                   />
                   <Label htmlFor={`amenity-${amenity}`} className="font-normal">
                     {amenity}
@@ -128,7 +279,7 @@ function RoomForm({ room, onSave, closeDialog }: { room?: Room; onSave: (data: R
       </div>
 
       <div className="flex items-center space-x-2">
-        <Checkbox id="is_active" {...register('is_active')} />
+        <Checkbox id="is_active" {...register('is_active')} disabled={isSubmitting} />
         <Label htmlFor="is_active" className="font-normal">
           Active (visible to users)
         </Label>
@@ -136,15 +287,19 @@ function RoomForm({ room, onSave, closeDialog }: { room?: Room; onSave: (data: R
 
       <DialogFooter>
         <DialogClose asChild>
-          <Button type="button" variant="outline">Cancel</Button>
+          <Button type="button" variant="outline" disabled={isSubmitting}>
+            Cancel
+          </Button>
         </DialogClose>
-        <Button type="submit">{room ? 'Save Changes' : 'Create Room'}</Button>
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? 'Saving...' : room ? 'Save Changes' : 'Create Room'}
+        </Button>
       </DialogFooter>
     </form>
   );
 }
 
-function ManageVenueDialog({ room, onSave, children }: { room?: Room, onSave: (data: RoomFormData, id?: string) => void, children: React.ReactNode }) {
+function ManageVenueDialog({ room, onSave, children }: { room?: Room, onSave: (data: RoomFormData, id?: string) => Promise<void>, children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -168,111 +323,160 @@ export default function ManageVenuesPage() {
   const { toast } = useToast();
   const supabase = createClientComponentClient();
 
-  useEffect(() => {
-    const fetchRooms = async () => {
-      try {
-        setIsLoading(true);
-        const { data, error } = await supabase
-          .from('rooms')
-          .select('*')
-          .order('created_at', { ascending: false });
+  const fetchRooms = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-        if (error) throw error;
+      if (error) throw error;
 
-        // Ensure tags is always an array
-        const formattedRooms = data?.map(room => ({
-          ...room,
-          tags: Array.isArray(room.tags) ? room.tags : []
-        })) || [];
+      const formattedRooms = data?.map(room => ({
+        ...room,
+        tags: Array.isArray(room.tags) ? room.tags : []
+      })) || [];
 
-        setRooms(formattedRooms);
-      } catch (error) {
-        toast({
-          variant: "destructive",
-          title: "Error loading rooms",
-          description: "Failed to fetch rooms data",
-        });
-        console.error('Error fetching rooms:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchRooms();
+      setRooms(formattedRooms);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error loading rooms",
+        description: "Failed to fetch rooms data",
+      });
+      console.error('Error fetching rooms:', error);
+    } finally {
+      setIsLoading(false);
+    }
   }, [supabase, toast]);
 
+  useEffect(() => {
+    fetchRooms();
+  }, [fetchRooms]);
+
+  const uploadImage = async (file: File) => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Math.random().toString(36).substring(2, 15)}-${Date.now()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('rooms') // Using your 'rooms' bucket
+      .upload(filePath, file, {
+        contentType: file.type,
+        upsert: false,
+        cacheControl: '3600' // 1 hour cache
+      });
+
+    if (uploadError) throw uploadError;
+
+    // Construct the public URL directly for faster response
+    return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/rooms/${filePath}`;
+  };
+
   const handleSaveRoom = async (data: RoomFormData, id?: string) => {
+    const toastId = toast({
+      title: "Saving venue...",
+      description: "Please wait while we save your changes",
+      duration: Infinity,
+    });
+
     try {
+      let imageUrl = id ? rooms.find(r => r.room_id === id)?.room_url : '';
+
+      // Upload new image if provided
+      if (data.image_file) {
+
+        toast({
+          title: "Saving venue...",
+          description: "Uploading image...",
+        });
+
+        imageUrl = await uploadImage(data.image_file);
+      } else if (!id) {
+        throw new Error('Image is required for new rooms');
+      }
+
+      toast({
+        title: "Saving venue...",
+        description: "Saving room details...",
+      });
+
+      const roomData = {
+        name: data.name,
+        capacity: data.capacity,
+        location: data.location,
+        ...(imageUrl ? { room_url: imageUrl } : {}),
+        tags: data.tags,
+        is_active: data.is_active,
+        updated_at: new Date().toISOString(),
+      };
+
       if (id) {
         // Update existing room
         const { error } = await supabase
           .from('rooms')
-          .update({
-            name: data.name,
-            capacity: data.capacity,
-            location: data.location,
-            room_url: data.room_url,
-            tags: data.tags,
-            is_active: data.is_active,
-            updated_at: new Date().toISOString(),
-          })
+          .update(roomData)
           .eq('room_id', id);
 
         if (error) throw error;
 
-        // Update local state
         setRooms(prev => prev.map(r => r.room_id === id ? {
           ...r,
-          ...data,
-          updated_at: new Date().toISOString()
+          ...roomData,
+          room_url: imageUrl || r.room_url,
         } : r));
-
-        toast({
-          title: "Venue Updated",
-          description: `"${data.name}" has been successfully updated.`,
-        });
       } else {
         // Create new room
         const { data: newRoom, error } = await supabase
           .from('rooms')
           .insert({
-            name: data.name,
-            capacity: data.capacity,
-            location: data.location,
-            room_url: data.room_url,
-            tags: data.tags,
-            is_active: data.is_active,
+            ...roomData,
             created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
           })
           .select()
           .single();
 
         if (error) throw error;
 
-        // Update local state
         setRooms(prev => [{
           ...newRoom,
           tags: Array.isArray(newRoom.tags) ? newRoom.tags : []
         }, ...prev]);
-
-        toast({
-          title: "Venue Created",
-          description: `"${data.name}" has been successfully created.`,
-        });
       }
-    } catch (error) {
+
+      toast({
+        title: "Success!",
+        description: `Room "${data.name}" saved successfully`,
+        duration: 3000,
+      });
+    } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Operation Failed",
-        description: "There was an error saving the venue data.",
+        title: "Error",
+        description: error.message || "Failed to save room",
+        duration: 5000,
       });
-      console.error('Error saving room:', error);
+      console.error('Save error:', error);
+      throw error;
     }
   };
 
   const handleDeleteRoom = async (roomId: string) => {
     try {
+      const room = rooms.find(r => r.room_id === roomId);
+      if (!room) return;
+
+      // Delete the image from storage if it's not the default
+      if (room.room_url && !room.room_url.includes('default.png')) {
+        const urlParts = room.room_url.split('/');
+        const filePath = urlParts.slice(urlParts.indexOf('rooms')).join('/');
+
+        await supabase.storage
+          .from('rooms')
+          .remove([filePath]);
+      }
+
       const { error } = await supabase
         .from('rooms')
         .delete()
@@ -280,7 +484,6 @@ export default function ManageVenuesPage() {
 
       if (error) throw error;
 
-      // Update local state
       setRooms(prev => prev.filter(r => r.room_id !== roomId));
 
       toast({
@@ -326,7 +529,7 @@ export default function ManageVenuesPage() {
                     alt={room.name}
                     fill
                     className="object-cover"
-                    unoptimized={room.room_url?.startsWith('https://placehold.co/')}
+                    unoptimized
                   />
                 </CardHeader>
                 <CardContent className="p-6 flex flex-col flex-grow">

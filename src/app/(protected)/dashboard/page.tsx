@@ -197,6 +197,7 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
           alt={room.name}
           fill
           className="object-cover"
+          unoptimized //quick fix
         />
       </CardHeader>
       <CardContent className="p-6 flex flex-col flex-grow">
