@@ -343,7 +343,7 @@ function RoomCard({ room, date, setDate, bookings, onNewBooking }: {
                         <div className="space-y-4 pt-2">
                           <div className="flex justify-between items-center">
                             <Label htmlFor="customDuration">Custom Hours: {customDuration}</Label>
-                          </div>what about this, when the dashboard is loads the available rooms, it will check the db for each room's reschedule like end_time start_time and created_at so if there is a slot today at this time until this time it will blank out the slot therefor users arent able to book it, same thing for the slider (custom)
+                          </div>
                           <Slider
                             id="customDuration"
                             min={1}
