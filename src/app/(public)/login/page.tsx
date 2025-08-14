@@ -190,6 +190,7 @@ export default function LoginPage() {
                     variant="link"
                     type="button"
                     className="ml-auto inline-block h-auto p-0 text-sm"
+                    onClick={() => router.push("/forgot-password")}
                   >
                     Forgot password?
                   </Button>

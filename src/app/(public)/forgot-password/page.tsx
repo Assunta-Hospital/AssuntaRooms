@@ -1,49 +1,97 @@
-
+// app/forgot-password/page.tsx
 "use client";
 import { useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
 
-export default function ResetPasswordPage() {
-  const searchParams = useSearchParams();
+export default function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const { toast } = useToast();
   const router = useRouter();
-  const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
 
-  const accessToken = searchParams.get("access_token");
-
-  const handleReset = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
 
-    if (!accessToken) {
-      setMessage("Invalid or expired reset link.");
-      return;
-    }
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
 
-    const { error } = await supabase.auth.updateUser(
-      { password },
-      // @ts-ignore: Supabase v2 allows passing access_token here
-      { accessToken }
-    );
+      if (error) throw error;
 
-    if (error) setMessage(error.message);
-    else {
-      setMessage("Password updated! Redirecting to login...");
-      setTimeout(() => router.push("/login"), 2000);
+      setResetSent(true);
+      toast({
+        title: "Reset link sent!",
+        description: "Check your email for the password reset link",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to send reset email",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <form onSubmit={handleReset} className="max-w-sm mx-auto mt-20 grid gap-4">
-      <input
-        type="password"
-        placeholder="New password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        required
-      />
-      <button type="submit">Reset Password</button>
-      {message && <p>{message}</p>}
-    </form>
+    <div className="flex items-center justify-center min-h-screen p-4">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle className="text-2xl">Reset Password</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {resetSent ? (
+            <div className="grid gap-4">
+              <p className="text-sm text-muted-foreground">
+                We've sent a password reset link to <strong>{email}</strong>.
+                Please check your inbox.
+              </p>
+              <Button
+                onClick={() => router.push("/login")}
+                className="w-full"
+              >
+                Return to Login
+              </Button>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="grid gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="your@email.com"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? "Sending..." : "Send Reset Link"}
+              </Button>
+              <Button
+                variant="outline"
+                type="button"
+                className="w-full"
+                onClick={() => router.push("/login")}
+              >
+                Back to Login
+              </Button>
+            </form>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
